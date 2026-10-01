@@ -1,0 +1,6 @@
+{
+  "name": "vigipy Studio - Medical Device, Drug & Treatment-Outcome Signal Detection",
+  "description": "High-performance surveillance platform powered by vigipy 3.4 for medical devices (MAUDE), pharmaceuticals (FAERS), and clinical interventions. Disproportionality analysis (PRR, ROR, RFET, BCPNN, GPS, LASSO, SCORE-DA, SCORE-DDI), consensus triangulation, and longitudinal modeling.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
