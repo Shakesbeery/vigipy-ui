@@ -22,6 +22,7 @@ import {
   BCPNNConfigSchema,
   GPSConfigSchema,
   LASSOConfigSchema,
+  SCOREConfigSchema,
   DEFAULT_ANALYSIS_REQUEST,
   DEFAULT_PRR_CONFIG,
   DEFAULT_ROR_CONFIG,
@@ -29,6 +30,7 @@ import {
   DEFAULT_BCPNN_CONFIG,
   DEFAULT_GPS_CONFIG,
   DEFAULT_LASSO_CONFIG,
+  DEFAULT_SCORE_CONFIG,
   ExpectedMethod,
   DecisionMetric,
 } from "../../types";
@@ -42,7 +44,7 @@ export interface MethodConfigModalProps {
   isAnalyzing?: boolean;
 }
 
-type MethodTab = "consensus" | "prr" | "ror" | "rfet" | "bcpnn" | "gps" | "lasso";
+type MethodTab = "consensus" | "prr" | "ror" | "rfet" | "bcpnn" | "gps" | "lasso" | "score_da";
 
 export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
   isOpen,
@@ -76,6 +78,9 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
   const [lasso, setLasso] = useState<LASSOConfigSchema>(
     initialConfig?.lasso || { ...DEFAULT_LASSO_CONFIG }
   );
+  const [scoreDa, setScoreDa] = useState<SCOREConfigSchema>(
+    initialConfig?.score_da || initialConfig?.score || { ...DEFAULT_SCORE_CONFIG }
+  );
 
   // Sync state if initialConfig changes
   useEffect(() => {
@@ -86,6 +91,8 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
       if (initialConfig.bcpnn !== undefined && initialConfig.bcpnn !== null) setBcpnn({ ...initialConfig.bcpnn });
       if (initialConfig.gps !== undefined && initialConfig.gps !== null) setGps({ ...initialConfig.gps });
       if (initialConfig.lasso !== undefined && initialConfig.lasso !== null) setLasso({ ...initialConfig.lasso });
+      if (initialConfig.score_da !== undefined && initialConfig.score_da !== null) setScoreDa({ ...initialConfig.score_da });
+      else if (initialConfig.score !== undefined && initialConfig.score !== null) setScoreDa({ ...initialConfig.score });
       if (initialConfig.consensus !== undefined && initialConfig.consensus !== null) setConsensus(initialConfig.consensus);
     }
   }, [initialConfig]);
@@ -100,6 +107,7 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
     bcpnn.enabled,
     gps.enabled,
     lasso.enabled,
+    scoreDa.enabled,
   ].filter(Boolean).length;
 
   // Preset Configurations
@@ -112,6 +120,7 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
         setBcpnn((p) => ({ ...p, enabled: false }));
         setGps((p) => ({ ...p, enabled: true }));
         setLasso((p) => ({ ...p, enabled: false }));
+        setScoreDa((p) => ({ ...p, enabled: false }));
         setConsensus(true);
         break;
       case "ema":
@@ -121,6 +130,7 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
         setBcpnn((p) => ({ ...p, enabled: true }));
         setGps((p) => ({ ...p, enabled: false }));
         setLasso((p) => ({ ...p, enabled: false }));
+        setScoreDa((p) => ({ ...p, enabled: false }));
         setConsensus(true);
         break;
       case "core":
@@ -130,6 +140,7 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
         setBcpnn((p) => ({ ...p, enabled: true }));
         setGps((p) => ({ ...p, enabled: true }));
         setLasso((p) => ({ ...p, enabled: false }));
+        setScoreDa((p) => ({ ...p, enabled: false }));
         setConsensus(true);
         break;
       case "all":
@@ -139,6 +150,7 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
         setBcpnn((p) => ({ ...p, enabled: true }));
         setGps((p) => ({ ...p, enabled: true }));
         setLasso((p) => ({ ...p, enabled: true }));
+        setScoreDa((p) => ({ ...p, enabled: true }));
         setConsensus(true);
         break;
     }
@@ -151,6 +163,7 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
     setBcpnn({ ...DEFAULT_BCPNN_CONFIG });
     setGps({ ...DEFAULT_GPS_CONFIG });
     setLasso({ ...DEFAULT_LASSO_CONFIG });
+    setScoreDa({ ...DEFAULT_SCORE_CONFIG });
     setConsensus(true);
   };
 
@@ -161,6 +174,7 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
     bcpnn: { ...bcpnn },
     gps: { ...gps },
     lasso: { ...lasso },
+    score_da: { ...scoreDa },
     consensus,
   });
 
@@ -345,6 +359,16 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
               enabled={lasso.enabled}
               active={activeTab === "lasso"}
               onClick={() => setActiveTab("lasso")}
+            />
+
+            {/* SCORE-DA */}
+            <MethodTabButton
+              tabKey="score_da"
+              label="SCORE-DA"
+              sub="Syndromic Residuals"
+              enabled={scoreDa.enabled}
+              active={activeTab === "score_da"}
+              onClick={() => setActiveTab("score_da")}
             />
           </div>
 
@@ -910,6 +934,133 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
                       />
                       <span className="text-slate-200">Least Angle Regression (LARS)</span>
                     </label>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 7. SCORE-DA Configuration */}
+            {activeTab === "score_da" && (
+              <div className="space-y-5 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between p-4 rounded-xl bg-slate-950 border border-slate-800">
+                  <div>
+                    <h4 className="text-sm font-semibold text-white">Enable SCORE-DA</h4>
+                    <p className="text-xs text-slate-400">
+                      Syndromic Outlier & Residual Estimation — Low-rank baseline absorption + Graph Laplacian FISTA
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={scoreDa.enabled}
+                      onChange={(e) => setScoreDa({ ...scoreDa, enabled: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Latent Rank */}
+                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+                    <label className="text-xs font-medium text-slate-300">Latent Factor Rank (Rank)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      step={1}
+                      value={scoreDa.latent_rank}
+                      onChange={(e) => setScoreDa({ ...scoreDa, latent_rank: Math.max(1, parseInt(e.target.value) || 5) })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                    />
+                    <p className="text-[11px] text-slate-500">
+                      Number of latent factors absorbing indication confounding & class effects.
+                    </p>
+                  </div>
+
+                  {/* Syndromic Weight */}
+                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+                    <label className="text-xs font-medium text-slate-300">Syndromic Weight (λ₂)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={5}
+                      step={0.05}
+                      value={scoreDa.syndromic_weight}
+                      onChange={(e) => setScoreDa({ ...scoreDa, syndromic_weight: parseFloat(e.target.value) || 0.5 })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                    />
+                    <p className="text-[11px] text-slate-500">
+                      Graph Laplacian penalty borrowing strength across co-occurring events.
+                    </p>
+                  </div>
+
+                  {/* Sparsity Param */}
+                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+                    <label className="text-xs font-medium text-slate-300">Sparsity Penalty (λ₁)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={10}
+                      step={0.1}
+                      value={scoreDa.sparsity_param}
+                      onChange={(e) => setScoreDa({ ...scoreDa, sparsity_param: parseFloat(e.target.value) || 1.0 })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                    />
+                    <p className="text-[11px] text-slate-500">
+                      L1 soft-thresholding penalty shrinking minor residual fluctuations.
+                    </p>
+                  </div>
+
+                  {/* FDR Threshold */}
+                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+                    <label className="text-xs font-medium text-slate-300">Target FDR Threshold (q)</label>
+                    <input
+                      type="number"
+                      min={0.001}
+                      max={0.25}
+                      step={0.01}
+                      value={scoreDa.fdr_threshold}
+                      onChange={(e) => setScoreDa({ ...scoreDa, fdr_threshold: parseFloat(e.target.value) || 0.05 })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                    />
+                    <p className="text-[11px] text-slate-500">
+                      Benjamini-Hochberg false discovery rate cutoff for qualifying signals.
+                    </p>
+                  </div>
+
+                  {/* Deflation Iterations */}
+                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+                    <label className="text-xs font-medium text-slate-300">Deflation Passes</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={5}
+                      step={1}
+                      value={scoreDa.deflate_iterations}
+                      onChange={(e) => setScoreDa({ ...scoreDa, deflate_iterations: Math.max(1, parseInt(e.target.value) || 2) })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                    />
+                    <p className="text-[11px] text-slate-500">
+                      Iterative subtraction passes to eliminate blockbuster competition masking.
+                    </p>
+                  </div>
+
+                  {/* Min Events */}
+                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+                    <label className="text-xs font-medium text-slate-300">Min Observed Events (N)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      step={1}
+                      value={scoreDa.min_events}
+                      onChange={(e) => setScoreDa({ ...scoreDa, min_events: Math.max(1, parseInt(e.target.value) || 1) })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                    />
+                    <p className="text-[11px] text-slate-500">
+                      Minimum report count required to qualify as an actionable signal.
+                    </p>
                   </div>
                 </div>
               </div>

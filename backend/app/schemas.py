@@ -123,6 +123,20 @@ class LASSOConfigSchema(BaseModel):
     n_jobs: int = 1
 
 
+class SCOREConfigSchema(BaseModel):
+    enabled: bool = False
+    latent_rank: int = 5
+    syndromic_weight: float = 0.5
+    sparsity_param: float = 1.0
+    fdr_threshold: float = 0.05
+    deflate_iterations: int = 2
+    min_events: int = 1
+    max_iter: int = 50
+    tol: float = 0.0001
+    n_jobs: int = 1
+    seed: int = 42
+
+
 class RunAnalysisRequest(BaseModel):
     prr: Optional[PRRConfigSchema] = None
     ror: Optional[RORConfigSchema] = None
@@ -130,6 +144,8 @@ class RunAnalysisRequest(BaseModel):
     bcpnn: Optional[BCPNNConfigSchema] = None
     gps: Optional[GPSConfigSchema] = None
     lasso: Optional[LASSOConfigSchema] = None
+    score_da: Optional[SCOREConfigSchema] = None
+    score: Optional[SCOREConfigSchema] = None
     consensus: bool = True
 
 
@@ -233,6 +249,12 @@ class LongitudinalRunRequest(BaseModel):
     mode: Literal["cumulative", "disjoint"] = "cumulative"
     include_gaps: bool = False
     min_events: int = 3
+    decay_half_life: Optional[str] = None  # e.g. "365D", "730D", "180D", or None
+    decision_thres: Optional[float] = None
+    relative_risk: Optional[float] = None
+    ranking_statistic: Optional[str] = None
+    continuity_correction: Optional[bool] = None
+    alpha: Optional[float] = None
 
 
 class LongitudinalTrajectoryRequest(BaseModel):

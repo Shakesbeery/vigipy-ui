@@ -14,9 +14,12 @@ import {
   LineChart,
   Play,
   RefreshCw,
+  RotateCcw,
   Search,
+  SlidersHorizontal,
   Sparkles,
   TrendingUp,
+  X,
   Zap,
 } from "lucide-react";
 import {
@@ -168,6 +171,20 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [showPairDropdown, setShowPairDropdown] = useState<boolean>(false);
 
+  // Longitudinal & Method Analysis Parameters
+  const [showParamsPanel, setShowParamsPanel] = useState<boolean>(false);
+  const [decayHalfLife, setDecayHalfLife] = useState<string>("none"); // "none", "90D", "180D", "365D", "730D", "custom"
+  const [customDecay, setCustomDecay] = useState<string>("");
+  const [minEvents, setMinEvents] = useState<number>(3);
+  const [includeGaps, setIncludeGaps] = useState<boolean>(false);
+
+  // Method Hyperparameters
+  const [customThreshold, setCustomThreshold] = useState<string>(""); // empty = method default
+  const [rankingStatistic, setRankingStatistic] = useState<string>("default"); // "default", "IC025", "IC", "EB05", "EBGM"
+  const [lassoAlpha, setLassoAlpha] = useState<number>(0.01);
+  const [continuityCorrection, setContinuityCorrection] = useState<number>(0.5);
+  const [relativeRisk, setRelativeRisk] = useState<number>(1.0);
+
   // Execution & Progress State
   const [running, setRunning] = useState<boolean>(false);
   const [progress, setProgress] = useState<number>(1.0);
@@ -206,15 +223,18 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
       if (res.computed_methods) {
         setComputedMethods(res.computed_methods);
       }
-      if (sigs.length > 0) {
+      // If a pair was already explicitly chosen and is in results, keep it.
+      // If initialSignal was passed via props, honor it.
+      // Do NOT arbitrarily pick sigs[0] if user has not selected one.
+      if (sigs.length > 0 && initialSignal && !selectedProduct) {
         const found = sigs.some(
           (c) =>
-            c.product.toLowerCase() === selectedProduct.toLowerCase() &&
-            c.adverse_event.toLowerCase() === selectedAE.toLowerCase()
+            c.product.toLowerCase() === initialSignal.product.toLowerCase() &&
+            c.adverse_event.toLowerCase() === initialSignal.adverse_event.toLowerCase()
         );
-        if (!found && !initialSignal) {
-          setSelectedProduct(sigs[0].product);
-          setSelectedAE(sigs[0].adverse_event);
+        if (found) {
+          setSelectedProduct(initialSignal.product);
+          setSelectedAE(initialSignal.adverse_event);
         }
       }
     } catch (err: any) {
@@ -300,12 +320,29 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
       `Initializing ${cadenceLabel} ${targetM === "all" ? "multi-method" : targetM.toUpperCase()} longitudinal model...`
     );
 
+    const effectiveDecay =
+      decayHalfLife === "custom"
+        ? (customDecay.trim() || null)
+        : (decayHalfLife === "none" ? null : decayHalfLife);
+
+    const parsedThres = customThreshold.trim() !== "" ? parseFloat(customThreshold) : null;
+    const parsedStat = rankingStatistic !== "default" ? rankingStatistic : null;
+
     const req: LongitudinalRunRequest = {
       method: targetM,
       time_unit: CADENCE_MAP[cadenceLabel],
       mode,
-      include_gaps: false,
-      min_events: 3,
+      include_gaps: includeGaps,
+      min_events: minEvents > 0 ? minEvents : 3,
+      decay_half_life: effectiveDecay,
+      decision_thres: Number.isFinite(parsedThres) ? parsedThres : null,
+      ranking_statistic: parsedStat,
+      alpha: targetM === "lasso" || targetM === "all" ? lassoAlpha : null,
+      continuity_correction:
+        targetM === "prr" || targetM === "ror" || targetM === "all"
+          ? continuityCorrection
+          : null,
+      relative_risk: relativeRisk !== 1.0 ? relativeRisk : null,
     };
 
     if (pollIntervalRef.current) {
@@ -330,7 +367,9 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
             setStatusMessage("Longitudinal modeling completed.");
             const activeM = targetM === "all" ? "all" : targetM;
             loadLongitudinalSignals(activeM);
-            loadTrajectory(selectedProduct, selectedAE, targetM === "all" ? method : targetM);
+            if (selectedProduct && selectedAE) {
+              loadTrajectory(selectedProduct, selectedAE, targetM === "all" ? method : targetM);
+            }
           } else if (status.status === "failed") {
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
             setRunning(false);
@@ -743,15 +782,25 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
               className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 hover:border-slate-500 text-xs cursor-pointer shadow-inner transition"
             >
               <div className="truncate pr-2">
-                <span className="font-bold text-white">{selectedProduct || "No Signal Selected"}</span>
-                <span className="text-slate-500 mx-1.5">→</span>
-                <span className="text-slate-300 font-medium">{selectedAE || "Run Longitudinal Model"}</span>
+                {selectedProduct && selectedAE ? (
+                  <>
+                    <span className="font-bold text-white">{selectedProduct}</span>
+                    <span className="text-slate-500 mx-1.5">→</span>
+                    <span className="text-slate-300 font-medium">{selectedAE}</span>
+                  </>
+                ) : (
+                  <span className="text-slate-400 italic">
+                    {candidateSignals.length > 0
+                      ? "Select a drug-event pair to inspect..."
+                      : "No pair selected (Run longitudinal analysis to detect signals)"}
+                  </span>
+                )}
               </div>
               <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
             </div>
 
             {/* Active Signal Telemetry Summary */}
-            {activeCandidate && (
+            {activeCandidate && selectedProduct && selectedAE && (
               <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[11px]">
                 {activeCandidate.agreement_tier && (
                   <span
@@ -1010,6 +1059,23 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
 
           {/* Run Longitudinal Actions */}
           <div className="flex items-center gap-2">
+            {/* Parameters Toggle Button */}
+            <button
+              onClick={() => setShowParamsPanel(!showParamsPanel)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition ${
+                showParamsPanel
+                  ? "bg-indigo-600/30 text-indigo-200 border-indigo-500/50 shadow-sm"
+                  : "bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700"
+              }`}
+              title="Configure longitudinal decay half-life, minimum events, decision thresholds, and method parameters"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Parameters</span>
+              {(decayHalfLife !== "none" || customThreshold !== "" || rankingStatistic !== "default") && (
+                <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
+              )}
+            </button>
+
             <button
               onClick={() => handleRunLongitudinal("all")}
               disabled={running}
@@ -1034,6 +1100,194 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Longitudinal & Method Analysis Parameters Panel */}
+        {showParamsPanel && (
+          <div className="p-4 rounded-xl bg-slate-950/95 border border-indigo-500/30 shadow-2xl space-y-4 animate-in fade-in duration-150">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="w-4 h-4 text-indigo-400" />
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                  Longitudinal & Method Hyperparameters
+                </h4>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800 font-mono">
+                  Applied in Single & Multi-Method Runs
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setDecayHalfLife("none");
+                    setCustomDecay("");
+                    setMinEvents(3);
+                    setIncludeGaps(false);
+                    setCustomThreshold("");
+                    setRankingStatistic("default");
+                    setLassoAlpha(0.01);
+                    setContinuityCorrection(0.5);
+                    setRelativeRisk(1.0);
+                  }}
+                  className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-white px-2 py-1 rounded hover:bg-slate-800 transition"
+                  title="Reset all longitudinal parameters to defaults"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Reset Defaults</span>
+                </button>
+                <button
+                  onClick={() => setShowParamsPanel(false)}
+                  className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800 transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+              {/* Decay Half-Life */}
+              <div className="space-y-1.5 p-3 rounded-lg bg-slate-900/80 border border-slate-800/80">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-slate-200">Decay Half-Life (t½)</label>
+                  <span className="text-[10px] text-indigo-400 font-mono">Time Weighting</span>
+                </div>
+                <select
+                  value={decayHalfLife}
+                  onChange={(e) => setDecayHalfLife(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  <option value="none">Disabled (No decay - Equal weighting)</option>
+                  <option value="90D">90 Days (~3 Months)</option>
+                  <option value="180D">180 Days (~6 Months)</option>
+                  <option value="365D">365 Days (1 Year)</option>
+                  <option value="730D">730 Days (2 Years)</option>
+                  <option value="custom">Custom string (e.g. 120D, 1.5Y)</option>
+                </select>
+                {decayHalfLife === "custom" && (
+                  <input
+                    type="text"
+                    value={customDecay}
+                    onChange={(e) => setCustomDecay(e.target.value)}
+                    placeholder="e.g. 120D, 2Y, 6M"
+                    className="w-full mt-1.5 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-500 outline-none focus:border-indigo-500 font-mono"
+                  />
+                )}
+                <p className="text-[10px] text-slate-400">
+                  Attenuates historical reports as 2^(-Δt / t½) so recent cases have higher impact.
+                </p>
+              </div>
+
+              {/* Minimum Events & Gaps */}
+              <div className="space-y-1.5 p-3 rounded-lg bg-slate-900/80 border border-slate-800/80">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-slate-200">Min Events per Slice (N)</label>
+                  <span className="text-[10px] text-slate-400 font-mono">Default: 3</span>
+                </div>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={minEvents}
+                  onChange={(e) => setMinEvents(parseInt(e.target.value, 10) || 1)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-indigo-500 font-mono"
+                />
+                <label className="flex items-center gap-2 mt-2 cursor-pointer pt-1">
+                  <input
+                    type="checkbox"
+                    checked={includeGaps}
+                    onChange={(e) => setIncludeGaps(e.target.checked)}
+                    className="rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 bg-slate-950"
+                  />
+                  <span className="text-[11px] text-slate-300">Include empty time slices (Gaps)</span>
+                </label>
+                <p className="text-[10px] text-slate-400">
+                  Filters slices with sparse counts and preserves empty periods where 0 reports occurred.
+                </p>
+              </div>
+
+              {/* Decision Threshold Override */}
+              <div className="space-y-1.5 p-3 rounded-lg bg-slate-900/80 border border-slate-800/80">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-slate-200">Decision Threshold</label>
+                  <span className="text-[10px] text-amber-400 font-mono">
+                    {method.toUpperCase()} default: {METHOD_CONFIGS[method.toUpperCase()]?.threshold ?? 2.0}
+                  </span>
+                </div>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={customThreshold}
+                  onChange={(e) => setCustomThreshold(e.target.value)}
+                  placeholder={`Default (${METHOD_CONFIGS[method.toUpperCase()]?.threshold ?? 2.0})`}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 outline-none focus:border-indigo-500 font-mono"
+                />
+                <p className="text-[10px] text-slate-400">
+                  Score required in a slice to flag an alert onset. Blank uses standard method defaults.
+                </p>
+              </div>
+
+              {/* Ranking Statistic (BCPNN / GPS) */}
+              <div className="space-y-1.5 p-3 rounded-lg bg-slate-900/80 border border-slate-800/80">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-slate-200">Ranking Metric</label>
+                  <span className="text-[10px] text-blue-400 font-mono">Bayesian Bounds</span>
+                </div>
+                <select
+                  value={rankingStatistic}
+                  onChange={(e) => setRankingStatistic(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  <option value="default">Default (Conservative 5% Lower Bound: IC025 / EB05)</option>
+                  <option value="IC025">BCPNN: IC025 (Lower 5% Credible Interval)</option>
+                  <option value="IC">BCPNN: IC (Mean Information Component)</option>
+                  <option value="EB05">GPS: EB05 (Lower 5% Empirical Bayes Bound)</option>
+                  <option value="EBGM">GPS: EBGM (Geometric Mean Expected / Observed)</option>
+                </select>
+                <p className="text-[10px] text-slate-400">
+                  Selects between conservative lower interval bounds or point estimates for signal alert detection.
+                </p>
+              </div>
+
+              {/* LASSO Alpha Penalty */}
+              <div className="space-y-1.5 p-3 rounded-lg bg-slate-900/80 border border-slate-800/80">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-slate-200">LASSO Alpha (L1 Penalty)</label>
+                  <span className="text-[10px] text-emerald-400 font-mono">Default: 0.01</span>
+                </div>
+                <input
+                  type="number"
+                  step="0.005"
+                  min="0.0001"
+                  max="1.0"
+                  value={lassoAlpha}
+                  onChange={(e) => setLassoAlpha(parseFloat(e.target.value) || 0.01)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-indigo-500 font-mono"
+                />
+                <p className="text-[10px] text-slate-400">
+                  L1 regularization strength when evaluating multivariate LASSO regressions over time.
+                </p>
+              </div>
+
+              {/* Continuity Correction */}
+              <div className="space-y-1.5 p-3 rounded-lg bg-slate-900/80 border border-slate-800/80">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-slate-200">Continuity Correction</label>
+                  <span className="text-[10px] text-amber-300 font-mono">PRR / ROR</span>
+                </div>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0.0"
+                  max="2.0"
+                  value={continuityCorrection}
+                  onChange={(e) => setContinuityCorrection(parseFloat(e.target.value) || 0.0)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-indigo-500 font-mono"
+                />
+                <p className="text-[10px] text-slate-400">
+                  Additive pseudo-count correction applied to 2x2 contingency tables when encountering sparse counts.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Progress Tracker Bar */}
         {running && (
@@ -1072,7 +1326,11 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
               <span className="font-semibold text-white">
                 {viewMode === "compare" ? "Comparative Cross-Method Status" : `${method.toUpperCase()} Detection Status`}:
               </span>
-              {viewMode === "single" ? (
+              {(!selectedProduct || !selectedAE) ? (
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                  Select a drug-event pair above to evaluate temporal status
+                </span>
+              ) : viewMode === "single" ? (
                 onsetPoint ? (
                   <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
                     Threshold Alert Onset: {formatTimestampTick(onsetPoint.timestamp)}
@@ -1094,7 +1352,9 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
               <span className="text-slate-500 uppercase text-[10px] tracking-wider font-sans font-bold">
                 Alert History:
               </span>
-              {alertNotices.length > 0 ? (
+              {(!selectedProduct || !selectedAE) ? (
+                <span className="text-slate-500 italic font-sans">No drug-event pair selected</span>
+              ) : alertNotices.length > 0 ? (
                 alertNotices.map((n) => (
                   <span
                     key={n.method}
@@ -1106,7 +1366,7 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
               ) : (
                 <span className="text-slate-500 italic">No methods have crossed detection threshold</span>
               )}
-              {unalertedMethods.length > 0 && (
+              {(!selectedProduct || !selectedAE) ? null : unalertedMethods.length > 0 && (
                 <span className="text-slate-500 text-[11px]">
                   ({unalertedMethods.join(", ")} below threshold)
                 </span>
@@ -1214,6 +1474,34 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
           <div className="py-32 flex flex-col items-center justify-center gap-3 text-slate-400">
             <span className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
             <span className="text-xs">Rendering trajectory curves...</span>
+          </div>
+        ) : (!selectedProduct || !selectedAE) ? (
+          <div className="py-24 text-center text-slate-400 text-xs space-y-3 bg-slate-950/40 rounded-xl border border-slate-800">
+            <LineChart className="w-8 h-8 text-slate-600 mx-auto" />
+            <p className="text-sm font-medium text-slate-300">
+              No Drug-Event Pair Selected
+            </p>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              {candidateSignals.length > 0
+                ? "Choose a drug-event pair from the selector above to visualize its longitudinal trajectory and historical onset."
+                : "No longitudinal signals computed yet. Click 'Run Longitudinal' or 'Compute All Methods' to analyze time slices across your dataset."}
+            </p>
+            {candidateSignals.length > 0 ? (
+              <button
+                onClick={() => setShowPairDropdown(true)}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow transition"
+              >
+                Choose Drug-Event Pair
+              </button>
+            ) : (
+              <button
+                onClick={() => handleRunLongitudinal(viewMode === "compare" ? "all" : method)}
+                disabled={running}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow transition"
+              >
+                {running ? "Modeling..." : `Run ${viewMode === "compare" ? "Multi-Method" : method.toUpperCase()} Longitudinal`}
+              </button>
+            )}
           </div>
         ) : trajectoryError || (trajectory.length === 0 && Object.keys(multiTrajectories).length === 0) ? (
           <div className="py-24 text-center text-slate-400 text-xs space-y-3 bg-slate-950/40 rounded-xl border border-slate-800">

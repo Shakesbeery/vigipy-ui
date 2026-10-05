@@ -126,7 +126,7 @@ export const SignalGrid: React.FC<SignalGridProps> = ({
     loadData();
   }, [loadData]);
 
-  // Reset pagination and filters upon external refreshKey change (rerun / dataset swap)
+  // Reset pagination, filters, and immediately reload data upon external refreshKey change (rerun / dataset swap)
   useEffect(() => {
     if (refreshKey !== undefined && refreshKey !== null) {
       setPage(1);
@@ -136,8 +136,20 @@ export const SignalGrid: React.FC<SignalGridProps> = ({
       setMinCount("");
       setSearch("");
       setDebouncedSearch("");
+      loadData();
     }
-  }, [refreshKey]);
+  }, [refreshKey, loadData]);
+
+  // Auto-refresh signals table periodically (every 3s) if table is currently empty
+  // so newly completed results populate automatically without requiring user interaction
+  useEffect(() => {
+    if (data.rows.length === 0 && !loading) {
+      const timer = setInterval(() => {
+        loadData();
+      }, 3000);
+      return () => clearInterval(timer);
+    }
+  }, [data.rows.length, loading, loadData]);
 
   // Handle column sort toggle
   const handleSort = (columnKey: string) => {

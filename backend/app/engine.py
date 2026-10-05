@@ -14,6 +14,7 @@ from vigipy import (
     BCPNNConfig,
     GPSConfig,
     LASSOConfig,
+    SCOREConfig,
     LongitudinalModel,
     PRRConfig,
     RFETConfig,
@@ -458,6 +459,23 @@ def execute_analysis(
             )
         )
 
+    score_cfg = req.score_da or req.score
+    if score_cfg and score_cfg.enabled:
+        configs.append(
+            SCOREConfig(
+                latent_rank=score_cfg.latent_rank,
+                syndromic_weight=score_cfg.syndromic_weight,
+                sparsity_param=score_cfg.sparsity_param,
+                fdr_threshold=score_cfg.fdr_threshold,
+                deflate_iterations=score_cfg.deflate_iterations,
+                min_events=score_cfg.min_events,
+                max_iter=score_cfg.max_iter,
+                tol=score_cfg.tol,
+                n_jobs=score_cfg.n_jobs,
+                seed=score_cfg.seed,
+            )
+        )
+
     if not configs:
         raise ValueError("No analysis methods selected. Please enable at least one method.")
 
@@ -581,7 +599,8 @@ def execute_longitudinal(
     if progress_cb:
         progress_cb(0.1, f"Initializing longitudinal model with {req.time_unit} cadence...")
 
-    lm = LongitudinalModel(df, req.time_unit)
+    decay_val = req.decay_half_life if (req.decay_half_life and req.decay_half_life.lower() not in ("none", "off", "")) else None
+    lm = LongitudinalModel(df, req.time_unit, decay_half_life=decay_val)
 
     # Pick analysis method function
     from vigipy import bcpnn, gps, prr, rfet, ror, lasso
@@ -619,7 +638,28 @@ def execute_longitudinal(
             if m == "lasso"
             else None
         )
-        extra_kwargs = {"num_bootstrap": 0, "use_bootstrap": False} if m == "lasso" else {}
+        extra_kwargs: Dict[str, Any] = {}
+        if m == "lasso":
+            extra_kwargs["num_bootstrap"] = 0
+            extra_kwargs["use_bootstrap"] = False
+            if req.alpha is not None:
+                extra_kwargs["alpha"] = req.alpha
+            if req.decision_thres is not None:
+                extra_kwargs["lasso_thresh"] = req.decision_thres
+        elif m in ("prr", "ror"):
+            if req.decision_thres is not None:
+                extra_kwargs["decision_thres"] = req.decision_thres
+            if req.relative_risk is not None:
+                extra_kwargs["relative_risk"] = req.relative_risk
+            if req.continuity_correction is not None:
+                extra_kwargs["continuity_correction"] = req.continuity_correction
+        elif m in ("bcpnn", "gps"):
+            if req.decision_thres is not None:
+                extra_kwargs["decision_thres"] = req.decision_thres
+            if req.ranking_statistic:
+                extra_kwargs["ranking_statistic"] = req.ranking_statistic
+            if req.relative_risk is not None:
+                extra_kwargs["relative_risk"] = req.relative_risk
 
         if req.mode == "cumulative":
             lm.run(
@@ -628,6 +668,7 @@ def execute_longitudinal(
                 min_events=req.min_events,
                 conversion_type=conv_type,
                 conversion_kwargs=conv_kwargs,
+                decay_half_life=decay_val,
                 **extra_kwargs,
             )
         else:
@@ -637,6 +678,7 @@ def execute_longitudinal(
                 min_events=req.min_events,
                 conversion_type=conv_type,
                 conversion_kwargs=conv_kwargs,
+                decay_half_life=decay_val,
                 **extra_kwargs,
             )
 
@@ -671,7 +713,9 @@ def extract_single_method_trajectory(
         "gps": ["EBGM", "quantile", "score_gps", "Score"],
         "rfet": ["RFET", "p-value", "score_rfet", "Score"],
         "lasso": ["LASSO Coefficient", "Beta", "score_lasso", "Score"],
-    }.get(m_low, ["Score", "PRR", "ROR", "quantile", "IC", "EBGM", "LASSO Coefficient", "Beta"])
+        "score": ["SER", "SRR", "score_score", "Score"],
+        "score_da": ["SER", "SRR", "score_score_da", "Score"],
+    }.get(m_low, ["Score", "PRR", "ROR", "quantile", "IC", "EBGM", "LASSO Coefficient", "Beta", "SER"])
 
     for ts, res in results:
         ts_str = ts.strftime("%Y-%m-%d")
@@ -739,6 +783,8 @@ def extract_single_method_trajectory(
                     is_alert = bool(score_val < 0.05)
                 elif m_low == "lasso":
                     is_alert = bool(score_val > 0.0 or (ci_l is not None and ci_l > 0.0))
+                elif m_low in ("score", "score_da"):
+                    is_alert = bool(score_val > 0.0)
                 else:
                     is_alert = bool(score_val >= 2.0)
 

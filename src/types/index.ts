@@ -133,6 +133,20 @@ export interface LASSOConfigSchema {
   n_jobs: number;
 }
 
+export interface SCOREConfigSchema {
+  enabled: boolean;
+  latent_rank: number;
+  syndromic_weight: number;
+  sparsity_param: number;
+  fdr_threshold: number;
+  deflate_iterations: number;
+  min_events: number;
+  max_iter: number;
+  tol: number;
+  n_jobs: number;
+  seed: number;
+}
+
 export interface RunAnalysisRequest {
   prr?: PRRConfigSchema | null;
   ror?: RORConfigSchema | null;
@@ -140,6 +154,8 @@ export interface RunAnalysisRequest {
   bcpnn?: BCPNNConfigSchema | null;
   gps?: GPSConfigSchema | null;
   lasso?: LASSOConfigSchema | null;
+  score_da?: SCOREConfigSchema | null;
+  score?: SCOREConfigSchema | null;
   consensus: boolean;
 }
 
@@ -244,6 +260,12 @@ export interface LongitudinalRunRequest {
   mode: "cumulative" | "disjoint";
   include_gaps: boolean;
   min_events: number;
+  decay_half_life?: string | null;
+  decision_thres?: number | null;
+  relative_risk?: number | null;
+  ranking_statistic?: string | null;
+  continuity_correction?: number | boolean | null;
+  alpha?: number | null;
 }
 
 export interface LongitudinalTrajectoryRequest {
@@ -392,6 +414,20 @@ export const DEFAULT_LASSO_CONFIG: LASSOConfigSchema = {
   n_jobs: 1,
 };
 
+export const DEFAULT_SCORE_CONFIG: SCOREConfigSchema = {
+  enabled: false,
+  latent_rank: 5,
+  syndromic_weight: 0.5,
+  sparsity_param: 1.0,
+  fdr_threshold: 0.05,
+  deflate_iterations: 2,
+  min_events: 1,
+  max_iter: 50,
+  tol: 0.0001,
+  n_jobs: 1,
+  seed: 42,
+};
+
 export const DEFAULT_ANALYSIS_REQUEST: RunAnalysisRequest = {
   prr: DEFAULT_PRR_CONFIG,
   ror: DEFAULT_ROR_CONFIG,
@@ -399,6 +435,7 @@ export const DEFAULT_ANALYSIS_REQUEST: RunAnalysisRequest = {
   bcpnn: DEFAULT_BCPNN_CONFIG,
   gps: DEFAULT_GPS_CONFIG,
   lasso: DEFAULT_LASSO_CONFIG,
+  score_da: DEFAULT_SCORE_CONFIG,
   consensus: true,
 };
 

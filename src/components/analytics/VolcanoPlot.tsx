@@ -461,9 +461,14 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
                 return null;
               }
 
+              const isHovered = hoveredPoint === pt;
               const isSignal = pt.alert;
-              const fill = isSignal ? "#f43f5e" : "#475569";
-              const r = isSignal ? 4.5 : 2.5;
+              const fill = isHovered
+                ? (isSignal ? "#fb7185" : "#94a3b8")
+                : (isSignal ? "#f43f5e" : "#475569");
+              const r = isHovered
+                ? (isSignal ? 7.0 : 5.0)
+                : (isSignal ? 4.5 : 2.5);
 
               return (
                 <circle
@@ -472,11 +477,16 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
                   cy={cy}
                   r={r}
                   fill={fill}
-                  opacity={isSignal ? 0.9 : 0.4}
-                  className="cursor-pointer transition-transform hover:scale-150"
+                  stroke={isHovered ? "#ffffff" : "none"}
+                  strokeWidth={isHovered ? 1.5 : 0}
+                  opacity={isHovered ? 1.0 : (isSignal ? 0.9 : 0.4)}
+                  className="cursor-pointer"
                   onClick={() => onSelectSignal(pt.product, pt.adverse_event)}
                   onMouseEnter={(e) => {
                     setHoveredPoint(pt);
+                    setTooltipPos({ x: e.clientX, y: e.clientY });
+                  }}
+                  onMouseMove={(e) => {
                     setTooltipPos({ x: e.clientX, y: e.clientY });
                   }}
                   onMouseLeave={() => setHoveredPoint(null)}
