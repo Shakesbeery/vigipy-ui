@@ -72,6 +72,7 @@ export const App: React.FC = () => {
   const [jobStatus, setJobStatus] = useState<JobStatusResponse | null>(null);
   const [analysisConfig, setAnalysisConfig] = useState<RunAnalysisRequest>(DEFAULT_ANALYSIS_REQUEST);
   const [selectedSignal, setSelectedSignal] = useState<SignalRow | null>(null);
+  const [longitudinalSignal, setLongitudinalSignal] = useState<SignalRow | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
   const [analysisVersion, setAnalysisVersion] = useState<number>(0);
 
@@ -238,7 +239,7 @@ export const App: React.FC = () => {
       selectedSignal?.product === product && selectedSignal?.adverse_event === adverseEvent
         ? selectedSignal
         : ({ product, adverse_event: adverseEvent } as SignalRow);
-    setSelectedSignal(matchingRow);
+    setLongitudinalSignal(matchingRow);
     setActiveTab("longitudinal");
   };
 
@@ -254,6 +255,7 @@ export const App: React.FC = () => {
       setDataSummary(null);
       setJobStatus(null);
       setSelectedSignal(null);
+      setLongitudinalSignal(null);
       setIsDrawerOpen(false);
       setTotalSignals(0);
       setIsRemappingColumns(false);
@@ -272,6 +274,7 @@ export const App: React.FC = () => {
     setDataSummary(null);
     setJobStatus(null);
     setSelectedSignal(null);
+    setLongitudinalSignal(null);
     setIsDrawerOpen(false);
     setTotalSignals(0);
     setIsRemappingColumns(false);
@@ -581,10 +584,10 @@ export const App: React.FC = () => {
               <div className="flex-1 overflow-y-auto p-6">
                 <div className="max-w-6xl mx-auto">
                   <LongitudinalViewer
-                    initialSignal={selectedSignal}
+                    initialSignal={longitudinalSignal}
                     onSignalChange={(product, adverseEvent) => {
-                      if (selectedSignal?.product !== product || selectedSignal?.adverse_event !== adverseEvent) {
-                        setSelectedSignal({ product, adverse_event: adverseEvent } as SignalRow);
+                      if (longitudinalSignal?.product !== product || longitudinalSignal?.adverse_event !== adverseEvent) {
+                        setLongitudinalSignal({ product, adverse_event: adverseEvent } as SignalRow);
                       }
                     }}
                   />

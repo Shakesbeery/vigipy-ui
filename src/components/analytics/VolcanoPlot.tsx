@@ -40,7 +40,9 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchVolcanoData(m || selectedMethod);
+      const rawM = m || selectedMethod;
+      const targetM = rawM.toUpperCase() === "SCORE" ? "score_da" : rawM;
+      const res = await fetchVolcanoData(targetM);
       setData(res);
     } catch (err: any) {
       setError(err?.message || "Failed to load Volcano plot data.");
@@ -219,7 +221,7 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
         <div className="flex items-center gap-2 flex-wrap">
           {/* Method Selector */}
           <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800">
-            {["PRR", "ROR", "BCPNN", "GPS", "LASSO"].map((m) => (
+            {["PRR", "ROR", "BCPNN", "GPS", "LASSO", "SCORE"].map((m) => (
               <button
                 key={m}
                 onClick={() => setSelectedMethod(m)}

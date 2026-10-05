@@ -603,7 +603,7 @@ def execute_longitudinal(
     lm = LongitudinalModel(df, req.time_unit, decay_half_life=decay_val)
 
     # Pick analysis method function
-    from vigipy import bcpnn, gps, prr, rfet, ror, lasso
+    from vigipy import bcpnn, gps, prr, rfet, ror, lasso, score_da
     method_funcs = {
         "prr": prr,
         "ror": ror,
@@ -611,6 +611,8 @@ def execute_longitudinal(
         "bcpnn": bcpnn,
         "gps": gps,
         "lasso": lasso,
+        "score_da": score_da,
+        "score": score_da,
     }
 
     methods_to_run: List[str] = []
@@ -646,6 +648,11 @@ def execute_longitudinal(
                 extra_kwargs["alpha"] = req.alpha
             if req.decision_thres is not None:
                 extra_kwargs["lasso_thresh"] = req.decision_thres
+        elif m in ("score_da", "score"):
+            if req.alpha is not None:
+                extra_kwargs["sparsity_param"] = req.alpha
+            if req.decision_thres is not None:
+                extra_kwargs["fdr_threshold"] = req.decision_thres
         elif m in ("prr", "ror"):
             if req.decision_thres is not None:
                 extra_kwargs["decision_thres"] = req.decision_thres
@@ -891,7 +898,13 @@ def get_longitudinal_signals(
 
     pair_stats: Dict[Tuple[str, str], Dict[str, Any]] = {}
     total_slices_count = 0
-    col_cands = ["Score", "PRR", "ROR", "quantile", "IC", "EBGM", "LASSO Coefficient", "Beta"]
+    col_cands = ["Score", "PRR", "ROR", "quantile", "IC", "EBGM", "LASSO Coefficient", "Beta", "SER", "SRR", "Residual", "score_da"]
+
+    all_ts_set = set()
+    for slices in runs_to_inspect.values():
+        for ts, _ in slices:
+            all_ts_set.add(ts.strftime("%Y-%m-%d"))
+    all_sorted_timestamps = sorted(list(all_ts_set))
 
     for m_key, slices in runs_to_inspect.items():
         m_upper = m_key.upper()
@@ -930,6 +943,7 @@ def get_longitudinal_signals(
                         "latest_score": sc,
                         "count": cnt,
                         "slices_alerted": {ts_str},
+                        "alert_scores": [sc] if sc is not None else [],
                         "total_slices": len(slices),
                         "method": m_upper,
                         "methods_alerted": {m_upper},
@@ -937,6 +951,8 @@ def get_longitudinal_signals(
                 else:
                     item = pair_stats[pair_key]
                     item["slices_alerted"].add(ts_str)
+                    if sc is not None:
+                        item["alert_scores"].append(sc)
                     item["methods_alerted"].add(m_upper)
                     item["latest_timestamp"] = ts_str
                     if sc is not None:
@@ -968,6 +984,21 @@ def get_longitudinal_signals(
             else:
                 tier = "Isolated"
 
+        # Compute maximum consecutive alert streak across chronological time slices
+        curr_streak = 0
+        max_streak = 0
+        for t in all_sorted_timestamps:
+            if t in d["slices_alerted"]:
+                curr_streak += 1
+                if curr_streak > max_streak:
+                    max_streak = curr_streak
+            else:
+                curr_streak = 0
+
+        # Compute average signal strength during alert peaks
+        scores_arr = d.get("alert_scores", [])
+        avg_peak = round(float(np.mean(scores_arr)), 2) if scores_arr else (round(float(d["peak_score"]), 2) if d["peak_score"] is not None else None)
+
         signals_list.append({
             "product": d["product"],
             "adverse_event": d["adverse_event"],
@@ -978,6 +1009,8 @@ def get_longitudinal_signals(
             "count": d["count"],
             "slices_alerted": len(d["slices_alerted"]),
             "total_slices": total_slices_count,
+            "consecutive_alert_slices": max_streak,
+            "avg_peak_score": avg_peak,
             "method": d["method"] if len(runs_to_inspect) == 1 else "ALL",
             "consensus_score": consensus_sc,
             "agreement_tier": tier,
@@ -1000,6 +1033,10 @@ def get_longitudinal_signals(
         signals_list.sort(key=lambda s: s["latest_score"] if s["latest_score"] is not None else -9999, reverse=reverse)
     elif sort_by == "count":
         signals_list.sort(key=lambda s: s["count"] or 0, reverse=reverse)
+    elif sort_by == "consecutive_alert_slices":
+        signals_list.sort(key=lambda s: s["consecutive_alert_slices"] or 0, reverse=reverse)
+    elif sort_by == "avg_peak_score":
+        signals_list.sort(key=lambda s: s["avg_peak_score"] if s["avg_peak_score"] is not None else -9999, reverse=reverse)
     elif sort_by == "first_onset":
         signals_list.sort(key=lambda s: s["first_onset"] or "", reverse=reverse)
     elif sort_by == "slices_alerted":
@@ -1211,7 +1248,8 @@ def get_volcano_data(method: Optional[str] = None) -> Dict[str, Any]:
 
     df = state._cached_table
     target_method = (method or (state._methods_list[0] if state._methods_list else "PRR")).lower()
-    m_up = target_method.upper()
+    is_score = target_method in ["score", "score_da"]
+    m_up = "SCORE" if is_score else target_method.upper()
 
     score_col = f"score_{target_method}" if f"score_{target_method}" in df.columns else (f"score_{m_up}" if f"score_{m_up}" in df.columns else None)
     alert_col = f"alert_{target_method}" if f"alert_{target_method}" in df.columns else (f"alert_{m_up}" if f"alert_{m_up}" in df.columns else None)
@@ -1219,15 +1257,22 @@ def get_volcano_data(method: Optional[str] = None) -> Dict[str, Any]:
     fdr_col = f"fdr_{target_method}" if f"fdr_{target_method}" in df.columns else (f"fdr_{m_up}" if f"fdr_{m_up}" in df.columns else None)
 
     if not score_col:
-        for c in [m_up, "Score", "PRR", "ROR", "quantile", "IC", "EBGM", "Beta"]:
+        cands = ["score_score_da", "score_score", "score_da", "SER", "SRR"] if is_score else [m_up, "Score", "PRR", "ROR", "quantile", "IC", "EBGM", "Beta"]
+        for c in cands:
             if c in df.columns:
                 score_col = c
                 break
 
     if not alert_col:
-        for c in ["alert", "Alert", "is_signal"]:
+        for c in ([f"alert_score_da", f"alert_score"] if is_score else []) + ["alert", "Alert", "is_signal"]:
             if c in df.columns:
                 alert_col = c
+                break
+
+    if not fdr_col and is_score:
+        for c in ["fdr_score_da", "fdr_score", "fdr", "FDR"]:
+            if c in df.columns:
+                fdr_col = c
                 break
 
     sub_df = df.dropna(subset=["Product", "Adverse Event"]).copy()
@@ -1239,7 +1284,7 @@ def get_volcano_data(method: Optional[str] = None) -> Dict[str, Any]:
         else:
             sub_df = sub_df.head(5000)
 
-    threshold_effect = 0.0 if target_method in ["bcpnn", "lasso"] else 1.0
+    threshold_effect = 0.0 if (target_method in ["bcpnn", "lasso"] or is_score) else 1.0
     threshold_neg_log_p = 1.30103
 
     points: List[Dict[str, Any]] = []
@@ -1253,7 +1298,9 @@ def get_volcano_data(method: Optional[str] = None) -> Dict[str, Any]:
         raw_score = float(row[score_col]) if score_col and not pd.isna(row[score_col]) else 1.0
         is_alert = bool(row[alert_col]) if alert_col and not pd.isna(row[alert_col]) else False
 
-        if target_method == "bcpnn":
+        if is_score:
+            effect_size = raw_score
+        elif target_method == "bcpnn":
             effect_size = raw_score
         elif target_method == "lasso":
             effect_size = raw_score * 5.0

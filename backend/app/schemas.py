@@ -292,6 +292,8 @@ class LongitudinalSignalItem(BaseModel):
     count: float = 0.0
     slices_alerted: int = 0
     total_slices: int = 0
+    consecutive_alert_slices: Optional[int] = 0
+    avg_peak_score: Optional[float] = None
     method: str
     consensus_score: Optional[float] = None
     agreement_tier: Optional[str] = None

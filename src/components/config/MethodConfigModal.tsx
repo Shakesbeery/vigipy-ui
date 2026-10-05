@@ -278,24 +278,38 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
           {/* Navigation Sidebar */}
           <div className="w-full md:w-56 bg-slate-950/40 border-b md:border-b-0 md:border-r border-slate-800 p-3 space-y-1 overflow-y-auto shrink-0 select-none">
             {/* Consensus Tab */}
-            <button
-              onClick={() => setActiveTab("consensus")}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
+            <div
+              className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs font-medium transition border ${
                 activeTab === "consensus"
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
-                  : "text-slate-300 hover:bg-slate-800/80"
+                  ? "bg-indigo-600/30 text-white shadow-md shadow-indigo-600/20 border-indigo-500/40"
+                  : "text-slate-300 hover:bg-slate-800/80 border-transparent"
               }`}
             >
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4" />
-                <span>Consensus Engine</span>
+              <div
+                onClick={() => setActiveTab("consensus")}
+                className="flex items-center gap-2 flex-1 cursor-pointer select-none"
+                title="View consensus engine configuration"
+              >
+                <Sparkles className="w-4 h-4 text-indigo-400" />
+                <span className="font-semibold">Consensus Engine</span>
               </div>
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  consensus ? "bg-emerald-400" : "bg-slate-600"
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConsensus(!consensus);
+                }}
+                className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold transition flex items-center gap-1 shrink-0 ${
+                  consensus
+                    ? "bg-indigo-500/30 text-indigo-200 border border-indigo-500/50 hover:bg-indigo-500/40"
+                    : "bg-slate-800 text-slate-500 border border-slate-700 hover:bg-slate-700 hover:text-slate-400"
                 }`}
-              />
-            </button>
+                title={`Click to turn Consensus ${consensus ? "OFF" : "ON"}`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${consensus ? "bg-indigo-400 animate-pulse" : "bg-slate-500"}`} />
+                <span>{consensus ? "ON" : "OFF"}</span>
+              </button>
+            </div>
 
             <div className="pt-2 pb-1 px-2 text-[10px] font-mono uppercase tracking-wider text-slate-500">
               Disproportionality Methods
@@ -309,6 +323,7 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
               enabled={prr.enabled}
               active={activeTab === "prr"}
               onClick={() => setActiveTab("prr")}
+              onToggle={(val) => setPrr((p) => ({ ...p, enabled: val }))}
             />
 
             {/* ROR */}
@@ -319,6 +334,7 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
               enabled={ror.enabled}
               active={activeTab === "ror"}
               onClick={() => setActiveTab("ror")}
+              onToggle={(val) => setRor((p) => ({ ...p, enabled: val }))}
             />
 
             {/* RFET */}
@@ -329,6 +345,7 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
               enabled={rfet.enabled}
               active={activeTab === "rfet"}
               onClick={() => setActiveTab("rfet")}
+              onToggle={(val) => setRfet((p) => ({ ...p, enabled: val }))}
             />
 
             {/* BCPNN */}
@@ -339,6 +356,7 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
               enabled={bcpnn.enabled}
               active={activeTab === "bcpnn"}
               onClick={() => setActiveTab("bcpnn")}
+              onToggle={(val) => setBcpnn((p) => ({ ...p, enabled: val }))}
             />
 
             {/* GPS */}
@@ -349,6 +367,7 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
               enabled={gps.enabled}
               active={activeTab === "gps"}
               onClick={() => setActiveTab("gps")}
+              onToggle={(val) => setGps((p) => ({ ...p, enabled: val }))}
             />
 
             {/* LASSO */}
@@ -359,6 +378,7 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
               enabled={lasso.enabled}
               active={activeTab === "lasso"}
               onClick={() => setActiveTab("lasso")}
+              onToggle={(val) => setLasso((p) => ({ ...p, enabled: val }))}
             />
 
             {/* SCORE-DA */}
@@ -369,6 +389,7 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
               enabled={scoreDa.enabled}
               active={activeTab === "score_da"}
               onClick={() => setActiveTab("score_da")}
+              onToggle={(val) => setScoreDa((p) => ({ ...p, enabled: val }))}
             />
           </div>
 
@@ -1117,6 +1138,7 @@ interface MethodTabButtonProps {
   enabled: boolean;
   active: boolean;
   onClick: () => void;
+  onToggle: (enabled: boolean) => void;
 }
 
 const MethodTabButton: React.FC<MethodTabButtonProps> = ({
@@ -1125,39 +1147,53 @@ const MethodTabButton: React.FC<MethodTabButtonProps> = ({
   enabled,
   active,
   onClick,
+  onToggle,
 }) => {
   return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition text-left ${
+    <div
+      className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs transition border ${
         active
-          ? "bg-slate-800 text-white font-semibold shadow-inner border border-slate-700"
-          : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+          ? "bg-slate-800 text-white font-semibold shadow-inner border-slate-700"
+          : "text-slate-400 hover:bg-slate-900/80 hover:text-slate-200 border-transparent"
       }`}
     >
-      <div className="space-y-0.5">
-        <div className="flex items-center gap-2">
-          <span>{label}</span>
+      {/* Clickable Method Label & Description: opens parameter options */}
+      <div
+        onClick={onClick}
+        className="flex-1 cursor-pointer pr-2 select-none"
+        title={`View & configure ${label} parameters`}
+      >
+        <div className="flex items-center gap-1.5">
+          <span className="font-semibold text-white">{label}</span>
           <span
             className={`w-1.5 h-1.5 rounded-full ${
               enabled ? "bg-emerald-400" : "bg-slate-600"
             }`}
           />
         </div>
-        <div className="text-[10px] text-slate-500 truncate max-w-[130px] font-normal">
+        <div className="text-[10px] text-slate-500 truncate max-w-[110px] font-normal">
           {sub}
         </div>
       </div>
-      <span
-        className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+
+      {/* One-Click On/Off Toggle Button */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle(!enabled);
+        }}
+        className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold transition flex items-center gap-1 shrink-0 ${
           enabled
-            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-            : "bg-slate-800 text-slate-500"
+            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 shadow-sm"
+            : "bg-slate-800 text-slate-500 border border-slate-700 hover:bg-slate-700 hover:text-slate-400"
         }`}
+        title={`Click to turn ${label} ${enabled ? "OFF" : "ON"}`}
       >
-        {enabled ? "ON" : "OFF"}
-      </span>
-    </button>
+        <span className={`w-1.5 h-1.5 rounded-full ${enabled ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`} />
+        <span>{enabled ? "ON" : "OFF"}</span>
+      </button>
+    </div>
   );
 };
 

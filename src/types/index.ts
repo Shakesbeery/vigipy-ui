@@ -254,8 +254,8 @@ export interface Contingency2x2Response {
 // --- Longitudinal Schemas ---
 
 export interface LongitudinalRunRequest {
-  method: "prr" | "ror" | "rfet" | "bcpnn" | "gps" | "lasso" | "all";
-  methods?: ("prr" | "ror" | "rfet" | "bcpnn" | "gps" | "lasso")[];
+  method: "prr" | "ror" | "rfet" | "bcpnn" | "gps" | "lasso" | "score_da" | "all";
+  methods?: ("prr" | "ror" | "rfet" | "bcpnn" | "gps" | "lasso" | "score_da")[];
   time_unit: "YE" | "QE" | "ME";
   mode: "cumulative" | "disjoint";
   include_gaps: boolean;
@@ -303,6 +303,8 @@ export interface LongitudinalSignalItem {
   count: number;
   slices_alerted: number;
   total_slices: number;
+  consecutive_alert_slices?: number | null;
+  avg_peak_score?: number | null;
   method: string;
   consensus_score?: number | null;
   agreement_tier?: string | null;

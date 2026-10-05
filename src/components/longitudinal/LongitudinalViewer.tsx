@@ -10,6 +10,7 @@ import {
   Eye,
   EyeOff,
   Filter,
+  Flame,
   Layers,
   LineChart,
   Play,
@@ -18,6 +19,7 @@ import {
   Search,
   SlidersHorizontal,
   Sparkles,
+  Table,
   TrendingUp,
   X,
   Zap,
@@ -39,7 +41,7 @@ import {
 import { getTierBadgeClass } from "../inspector/SignalDrawer";
 import { MultiAELongitudinalChart } from "./MultiAELongitudinalChart";
 
-export type LongitudinalMethod = "bcpnn" | "gps" | "prr" | "ror" | "lasso" | "all";
+export type LongitudinalMethod = "bcpnn" | "gps" | "prr" | "ror" | "lasso" | "score_da" | "all";
 export type LongitudinalCadence = "YE" | "QE" | "ME";
 export type LongitudinalCadenceLabel = "Yearly" | "Quarterly" | "Monthly";
 export type LongitudinalMode = "cumulative" | "disjoint";
@@ -119,6 +121,14 @@ const METHOD_CONFIGS: Record<string, MethodMeta> = {
     metricLabel: "Penalized Regression Beta",
     normalize: (score) => (score !== null && score !== undefined ? Math.max(0, score * 2.0) : null),
   },
+  SCORE_DA: {
+    name: "SCORE-DA",
+    color: "#f43f5e", // Rose
+    threshold: 0.0,
+    thresholdLabel: "SER > 0.0",
+    metricLabel: "Standardized Outlier Residual",
+    normalize: (score) => (score !== null && score !== undefined ? Math.max(0, score + 1.0) : null),
+  },
 };
 
 function formatTimestampTick(ts: string): string {
@@ -151,6 +161,7 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
     BCPNN: true,
     GPS: true,
     LASSO: true,
+    SCORE_DA: true,
   });
 
   // Dynamic Candidate Signals from Longitudinal Time Slices
@@ -158,7 +169,9 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
   const [loadingCandidates, setLoadingCandidates] = useState<boolean>(false);
   const [hasConsensus, setHasConsensus] = useState<boolean>(false);
   const [computedMethods, setComputedMethods] = useState<string[]>([]);
-  const [sortCriteria, setSortCriteria] = useState<"peak_score" | "latest_score" | "count" | "onset" | "slices_alerted" | "consensus_score">("peak_score");
+  const [sortCriteria, setSortCriteria] = useState<
+    "consecutive" | "avg_peak" | "peak_score" | "latest_score" | "count" | "onset" | "slices_alerted" | "consensus_score"
+  >("consecutive");
   const [tierFilter, setTierFilter] = useState<string>("All");
 
   // Drug-Event Pair Selection
@@ -170,6 +183,18 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
   );
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [showPairDropdown, setShowPairDropdown] = useState<boolean>(false);
+
+  // Table pagination and chart ref
+  const [tablePage, setTablePage] = useState<number>(1);
+  const [tableRowsPerPage, setTableRowsPerPage] = useState<number>(10);
+  const chartContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const handleSelectPair = (prod: string, ae: string) => {
+    setSelectedProduct(prod);
+    setSelectedAE(ae);
+    setShowPairDropdown(false);
+    chartContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   // Longitudinal & Method Analysis Parameters
   const [showParamsPanel, setShowParamsPanel] = useState<boolean>(false);
@@ -212,9 +237,18 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
   const loadLongitudinalSignals = async (targetM: string) => {
     setLoadingCandidates(true);
     try {
+      const backendSortBy =
+        sortCriteria === "consecutive"
+          ? "consecutive_alert_slices"
+          : sortCriteria === "avg_peak"
+          ? "avg_peak_score"
+          : sortCriteria === "onset"
+          ? "first_onset"
+          : sortCriteria;
+
       const res = await fetchLongitudinalSignals({
         method: targetM,
-        sort_by: sortCriteria,
+        sort_by: backendSortBy,
         sort_dir: "desc",
       });
       const sigs = res.signals || [];
@@ -224,17 +258,17 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
         setComputedMethods(res.computed_methods);
       }
       // If a pair was already explicitly chosen and is in results, keep it.
-      // If initialSignal was passed via props, honor it.
+      // If initialSignal was passed via props with a non-empty product, honor it.
       // Do NOT arbitrarily pick sigs[0] if user has not selected one.
-      if (sigs.length > 0 && initialSignal && !selectedProduct) {
+      if (sigs.length > 0 && initialSignal?.product && !selectedProduct) {
         const found = sigs.some(
           (c) =>
             c.product.toLowerCase() === initialSignal.product.toLowerCase() &&
-            c.adverse_event.toLowerCase() === initialSignal.adverse_event.toLowerCase()
+            c.adverse_event.toLowerCase() === (initialSignal.adverse_event || "").toLowerCase()
         );
         if (found) {
           setSelectedProduct(initialSignal.product);
-          setSelectedAE(initialSignal.adverse_event);
+          setSelectedAE(initialSignal.adverse_event || "");
         }
       }
     } catch (err: any) {
@@ -253,7 +287,7 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
 
   // Update selected signal if initialSignal prop changes
   useEffect(() => {
-    if (initialSignal) {
+    if (initialSignal?.product && initialSignal?.adverse_event) {
       setSelectedProduct(initialSignal.product);
       setSelectedAE(initialSignal.adverse_event);
     }
@@ -725,7 +759,11 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
     }
 
     list = [...list].sort((a, b) => {
-      if (sortCriteria === "peak_score") {
+      if (sortCriteria === "consecutive") {
+        return (b.consecutive_alert_slices ?? 0) - (a.consecutive_alert_slices ?? 0);
+      } else if (sortCriteria === "avg_peak") {
+        return (b.avg_peak_score ?? -9999) - (a.avg_peak_score ?? -9999);
+      } else if (sortCriteria === "peak_score") {
         return (b.peak_score ?? -9999) - (a.peak_score ?? -9999);
       } else if (sortCriteria === "latest_score") {
         return (b.latest_score ?? -9999) - (a.latest_score ?? -9999);
@@ -738,11 +776,16 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
       } else if (sortCriteria === "consensus_score" && (hasConsensus || viewMode === "compare")) {
         return (b.consensus_score ?? 0) - (a.consensus_score ?? 0);
       }
-      return (b.peak_score ?? -9999) - (a.peak_score ?? -9999);
+      return (b.consecutive_alert_slices ?? 0) - (a.consecutive_alert_slices ?? 0);
     });
 
     return list;
   }, [candidateSignals, searchQuery, tierFilter, sortCriteria, hasConsensus, viewMode]);
+
+  const paginatedCandidates = useMemo(() => {
+    const start = (tablePage - 1) * tableRowsPerPage;
+    return filteredCandidates.slice(start, start + tableRowsPerPage);
+  }, [filteredCandidates, tablePage, tableRowsPerPage]);
 
   return (
     <div className="flex flex-col h-full bg-slate-950 text-slate-100 overflow-y-auto p-4 sm:p-6 space-y-6">
@@ -763,194 +806,37 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
             </div>
           </div>
 
-          {/* Drug-Event Pair Dropdown Selector */}
-          <div className="relative min-w-[320px] sm:min-w-[420px]">
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-                Active Drug-Event Pair ({candidateSignals.length > 0 ? `${candidateSignals.length} candidates` : "0 candidates (Model not run)"})
-              </label>
-              {loadingCandidates && (
-                <span className="text-[10px] text-indigo-400 flex items-center gap-1">
-                  <span className="w-2.5 h-2.5 border border-indigo-400 border-t-transparent rounded-full animate-spin" />
-                  Loading...
+          {/* Quick Active Pair Indicator in Top Banner */}
+          {selectedProduct && selectedAE ? (
+            <div className="flex items-center gap-2 bg-slate-950/80 px-3.5 py-2 rounded-xl border border-slate-800 text-xs shadow-inner">
+              <span className="text-slate-400 font-medium">Inspecting:</span>
+              <span className="font-bold text-white">{selectedProduct}</span>
+              <span className="text-slate-500">→</span>
+              <span className="text-slate-200 font-medium">{selectedAE}</span>
+              {activeCandidate?.consecutive_alert_slices && activeCandidate.consecutive_alert_slices > 0 ? (
+                <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1 font-mono font-bold">
+                  <Flame className="w-3 h-3 text-amber-400" />
+                  {activeCandidate.consecutive_alert_slices} consecutive
                 </span>
-              )}
+              ) : null}
+              <button
+                onClick={() => {
+                  setSelectedProduct("");
+                  setSelectedAE("");
+                }}
+                className="ml-2 p-1 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded transition"
+                title="Deselect pair"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
-
-            <div
-              onClick={() => setShowPairDropdown(!showPairDropdown)}
-              className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 hover:border-slate-500 text-xs cursor-pointer shadow-inner transition"
-            >
-              <div className="truncate pr-2">
-                {selectedProduct && selectedAE ? (
-                  <>
-                    <span className="font-bold text-white">{selectedProduct}</span>
-                    <span className="text-slate-500 mx-1.5">→</span>
-                    <span className="text-slate-300 font-medium">{selectedAE}</span>
-                  </>
-                ) : (
-                  <span className="text-slate-400 italic">
-                    {candidateSignals.length > 0
-                      ? "Select a drug-event pair to inspect..."
-                      : "No pair selected (Run longitudinal analysis to detect signals)"}
-                  </span>
-                )}
-              </div>
-              <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+          ) : (
+            <div className="text-xs text-slate-500 italic bg-slate-950/40 px-3.5 py-2 rounded-xl border border-slate-800/60">
+              {candidateSignals.length > 0
+                ? `${candidateSignals.length} alerted candidate signals available below`
+                : "No longitudinal signals computed yet (Run analysis below)"}
             </div>
-
-            {/* Active Signal Telemetry Summary */}
-            {activeCandidate && selectedProduct && selectedAE && (
-              <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[11px]">
-                {activeCandidate.agreement_tier && (
-                  <span
-                    className={`px-2 py-0.5 rounded-full font-semibold border ${getTierBadgeClass(
-                      activeCandidate.agreement_tier
-                    )}`}
-                  >
-                    {activeCandidate.agreement_tier}
-                  </span>
-                )}
-                <span className="font-mono text-slate-300">
-                  Peak: <strong>{activeCandidate.peak_score !== null && activeCandidate.peak_score !== undefined ? activeCandidate.peak_score.toFixed(2) : "—"}</strong>
-                </span>
-                <span className="text-slate-600">·</span>
-                <span className="font-mono text-slate-300">
-                  Latest: <strong>{activeCandidate.latest_score !== null && activeCandidate.latest_score !== undefined ? activeCandidate.latest_score.toFixed(2) : "—"}</strong>
-                </span>
-                <span className="text-slate-600">·</span>
-                <span className="font-mono text-slate-300">
-                  Count: <strong>{activeCandidate.count.toLocaleString()}</strong>
-                </span>
-                <span className="text-slate-600">·</span>
-                <span className="text-slate-400">
-                  Alerted: <strong>{activeCandidate.slices_alerted}/{activeCandidate.total_slices} slices</strong>
-                </span>
-                {activeCandidate.first_onset && (
-                  <>
-                    <span className="text-slate-600">·</span>
-                    <span className="text-rose-400 font-mono">Onset: {formatTimestampTick(activeCandidate.first_onset)}</span>
-                  </>
-                )}
-                {activeCandidate.consensus_score !== null && activeCandidate.consensus_score !== undefined && (
-                  <>
-                    <span className="text-slate-600">·</span>
-                    <span className="text-indigo-400 font-mono">{activeCandidate.methods_alerted.length} methods alerted</span>
-                  </>
-                )}
-              </div>
-            )}
-
-            {showPairDropdown && (
-              <div className="absolute right-0 left-0 mt-2 z-40 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 space-y-2.5 max-w-lg">
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search candidate pairs..."
-                    className="w-full pl-9 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 outline-none focus:border-indigo-500"
-                    autoFocus
-                  />
-                </div>
-
-                <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
-                  <div className="flex items-center gap-1">
-                    <span>Sort:</span>
-                    <select
-                      value={sortCriteria}
-                      onChange={(e) => setSortCriteria(e.target.value as any)}
-                      className="bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 text-xs text-slate-200 outline-none"
-                    >
-                      <option value="peak_score">Peak Score</option>
-                      <option value="latest_score">Latest Score</option>
-                      <option value="count">Count (N)</option>
-                      <option value="onset">First Alert Date</option>
-                      <option value="slices_alerted">Times Alerted</option>
-                      {(hasConsensus || viewMode === "compare") && (
-                        <option value="consensus_score">Consensus Score</option>
-                      )}
-                    </select>
-                  </div>
-                  {(hasConsensus || viewMode === "compare") && (
-                    <div className="flex items-center gap-1">
-                      <span>Tier:</span>
-                      <select
-                        value={tierFilter}
-                        onChange={(e) => setTierFilter(e.target.value)}
-                        className="bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 text-xs text-slate-200 outline-none"
-                      >
-                        <option value="All">All Tiers</option>
-                        <option value="Unanimous">Unanimous</option>
-                        <option value="Strong">Strong</option>
-                        <option value="Moderate">Moderate</option>
-                        <option value="Weak">Weak</option>
-                        <option value="Isolated">Isolated</option>
-                      </select>
-                    </div>
-                  )}
-                </div>
-
-                <div className="max-h-60 overflow-y-auto space-y-1 divide-y divide-slate-800/40 text-xs pr-1">
-                  {filteredCandidates.length === 0 ? (
-                    <div className="py-6 text-center text-slate-500">
-                      {candidateSignals.length === 0
-                        ? "No longitudinal signals computed yet. Click 'Run Longitudinal' below to detect signals across time slices."
-                        : "No matching drug-event pairs found."}
-                    </div>
-                  ) : (
-                    filteredCandidates.map((pair) => {
-                      const isSelected =
-                        pair.product.toLowerCase() === selectedProduct.toLowerCase() &&
-                        pair.adverse_event.toLowerCase() === selectedAE.toLowerCase();
-                      return (
-                        <div
-                          key={`${pair.product}-${pair.adverse_event}`}
-                          onClick={() => {
-                            setSelectedProduct(pair.product);
-                            setSelectedAE(pair.adverse_event);
-                            setShowPairDropdown(false);
-                          }}
-                          className={`p-2 rounded-lg cursor-pointer transition flex items-center justify-between ${
-                            isSelected
-                              ? "bg-indigo-600/20 text-white font-medium border border-indigo-500/30"
-                              : "hover:bg-slate-800/80 text-slate-300"
-                          }`}
-                        >
-                          <div className="truncate pr-2">
-                            <div className="flex items-center gap-1.5 truncate">
-                              <span className="font-semibold text-white">{pair.product}</span>
-                              <span className="text-slate-500 shrink-0">→</span>
-                              <span className="text-slate-300 truncate font-medium">{pair.adverse_event}</span>
-                            </div>
-                            <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400 font-mono flex-wrap">
-                              {pair.agreement_tier && (
-                                <span className={`px-1.5 py-0.2 rounded border ${getTierBadgeClass(pair.agreement_tier)}`}>
-                                  {pair.agreement_tier}
-                                </span>
-                              )}
-                              <span>Peak: {pair.peak_score !== null && pair.peak_score !== undefined ? pair.peak_score.toFixed(2) : "—"}</span>
-                              <span>Latest: {pair.latest_score !== null && pair.latest_score !== undefined ? pair.latest_score.toFixed(2) : "—"}</span>
-                              <span>Alerted: {pair.slices_alerted}/{pair.total_slices} slices</span>
-                              <span>N: {pair.count.toLocaleString()}</span>
-                              {pair.first_onset && (
-                                <span>Onset: {formatTimestampTick(pair.first_onset)}</span>
-                              )}
-                              {pair.consensus_score !== null && pair.consensus_score !== undefined && (
-                                <span>{pair.methods_alerted.length} methods</span>
-                              )}
-                            </div>
-                          </div>
-                          {isSelected && <CheckCircle2 className="w-4 h-4 text-indigo-400 shrink-0" />}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+          )}
         </div>
 
         {/* Configuration Bar */}
@@ -1007,6 +893,7 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
                   <option value="prr" className="bg-slate-900 text-white">PRR (Rate Ratio)</option>
                   <option value="ror" className="bg-slate-900 text-white">ROR (Odds Ratio)</option>
                   <option value="lasso" className="bg-slate-900 text-white">LASSO (Penalized Beta)</option>
+                  <option value="score_da" className="bg-slate-900 text-white">SCORE-DA (Residuals)</option>
                 </select>
               </div>
             )}
@@ -1388,25 +1275,223 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
           }}
         />
       ) : (
-        <div className="bg-slate-900/90 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+        <div ref={chartContainerRef} className="bg-slate-900/90 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-3 border-b border-slate-800">
             <div>
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <span>
                   {viewMode === "compare"
                   ? "Multi-Method Surveillance Overlay (Threshold-Normalized)"
                   : `${method.toUpperCase()} Temporal Trajectory & Confidence Interval`}
-              </span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-blue-400 border border-slate-700">
-                {viewMode === "compare" ? "1.0× Universal Threshold" : `${cadenceLabel} Cadence`}
-              </span>
-            </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {viewMode === "compare"
-                ? "All methods normalized by detection threshold (Fold = Score / Threshold). 1.0× represents the universal alert line."
-                : "Timeline with confidence bands and exact historical onset pin. Only displayed if this method crossed threshold."}
-            </p>
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-blue-400 border border-slate-700">
+                  {viewMode === "compare" ? "1.0× Universal Threshold" : `${cadenceLabel} Cadence`}
+                </span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {viewMode === "compare"
+                  ? "All methods normalized by detection threshold (Fold = Score / Threshold). 1.0× represents universal alert line."
+                  : "Timeline with confidence bands and exact historical onset pin. Only displayed if this method crossed threshold."}
+              </p>
+            </div>
+
+            {/* Drug-Event Pair Dropdown Selector (Positioned close to the chart) */}
+            <div className="relative min-w-[280px] sm:min-w-[340px] md:max-w-[420px]">
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                  Active Drug-Event Pair ({candidateSignals.length > 0 ? `${candidateSignals.length} candidates` : "0 candidates"})
+                </label>
+                {loadingCandidates && (
+                  <span className="text-[10px] text-indigo-400 flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 border border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                    Loading...
+                  </span>
+                )}
+              </div>
+
+              <div
+                onClick={() => setShowPairDropdown(!showPairDropdown)}
+                className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-950 border border-slate-700/80 hover:border-slate-500 text-xs cursor-pointer shadow-inner transition"
+              >
+                <div className="truncate pr-2">
+                  {selectedProduct && selectedAE ? (
+                    <>
+                      <span className="font-bold text-white">{selectedProduct}</span>
+                      <span className="text-slate-500 mx-1.5">→</span>
+                      <span className="text-slate-300 font-medium">{selectedAE}</span>
+                    </>
+                  ) : (
+                    <span className="text-slate-400 italic">
+                      {candidateSignals.length > 0
+                        ? "Select pair or choose from table below..."
+                        : "No pair selected (Run longitudinal analysis to detect signals)"}
+                    </span>
+                  )}
+                </div>
+                <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+              </div>
+
+              {showPairDropdown && (
+                <div className="absolute right-0 left-0 mt-2 z-40 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 space-y-2.5 max-w-lg">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search candidate pairs..."
+                      className="w-full pl-9 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 outline-none focus:border-indigo-500"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                    <div className="flex items-center gap-1">
+                      <span>Sort:</span>
+                      <select
+                        value={sortCriteria}
+                        onChange={(e) => setSortCriteria(e.target.value as any)}
+                        className="bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 text-xs text-slate-200 outline-none"
+                      >
+                        <option value="consecutive">🔥 Consecutive Periods</option>
+                        <option value="avg_peak">Avg Peak Strength</option>
+                        <option value="peak_score">Peak Score</option>
+                        <option value="latest_score">Latest Score</option>
+                        <option value="count">Count (N)</option>
+                        <option value="onset">First Alert Date</option>
+                        <option value="slices_alerted">Times Alerted</option>
+                        {(hasConsensus || viewMode === "compare") && (
+                          <option value="consensus_score">Consensus Score</option>
+                        )}
+                      </select>
+                    </div>
+                    {(hasConsensus || viewMode === "compare") && (
+                      <div className="flex items-center gap-1">
+                        <span>Tier:</span>
+                        <select
+                          value={tierFilter}
+                          onChange={(e) => setTierFilter(e.target.value)}
+                          className="bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 text-xs text-slate-200 outline-none"
+                        >
+                          <option value="All">All Tiers</option>
+                          <option value="Unanimous">Unanimous</option>
+                          <option value="Strong">Strong</option>
+                          <option value="Moderate">Moderate</option>
+                          <option value="Weak">Weak</option>
+                          <option value="Isolated">Isolated</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="max-h-60 overflow-y-auto space-y-1 divide-y divide-slate-800/40 text-xs pr-1">
+                    {filteredCandidates.length === 0 ? (
+                      <div className="py-6 text-center text-slate-500">
+                        {candidateSignals.length === 0
+                          ? "No longitudinal signals computed yet. Click 'Run Longitudinal' above to detect signals."
+                          : "No matching drug-event pairs found."}
+                      </div>
+                    ) : (
+                      filteredCandidates.map((pair) => {
+                        const isSelected =
+                          pair.product.toLowerCase() === selectedProduct.toLowerCase() &&
+                          pair.adverse_event.toLowerCase() === selectedAE.toLowerCase();
+                        return (
+                          <div
+                            key={`${pair.product}-${pair.adverse_event}`}
+                            onClick={() => {
+                              setSelectedProduct(pair.product);
+                              setSelectedAE(pair.adverse_event);
+                              setShowPairDropdown(false);
+                            }}
+                            className={`p-2 rounded-lg cursor-pointer transition flex items-center justify-between ${
+                              isSelected
+                                ? "bg-indigo-600/20 text-white font-medium border border-indigo-500/30"
+                                : "hover:bg-slate-800/80 text-slate-300"
+                            }`}
+                          >
+                            <div className="truncate pr-2">
+                              <div className="flex items-center gap-1.5 truncate">
+                                <span className="font-semibold text-white">{pair.product}</span>
+                                <span className="text-slate-500 shrink-0">→</span>
+                                <span className="text-slate-300 truncate font-medium">{pair.adverse_event}</span>
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400 font-mono flex-wrap">
+                                {pair.consecutive_alert_slices !== null && pair.consecutive_alert_slices !== undefined && (
+                                  <span className="text-amber-300 font-bold">
+                                    🔥 {pair.consecutive_alert_slices} periods
+                                  </span>
+                                )}
+                                {pair.avg_peak_score !== null && pair.avg_peak_score !== undefined && (
+                                  <span className="text-rose-300">
+                                    Avg: {pair.avg_peak_score.toFixed(2)}
+                                  </span>
+                                )}
+                                <span>Peak: {pair.peak_score !== null && pair.peak_score !== undefined ? pair.peak_score.toFixed(2) : "—"}</span>
+                                <span>Alerted: {pair.slices_alerted}/{pair.total_slices} slices</span>
+                                {pair.first_onset && (
+                                  <span>Onset: {formatTimestampTick(pair.first_onset)}</span>
+                                )}
+                              </div>
+                            </div>
+                            {isSelected && <CheckCircle2 className="w-4 h-4 text-indigo-400 shrink-0" />}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
+
+          {/* Active Signal Telemetry Summary Strip */}
+          {activeCandidate && selectedProduct && selectedAE && (
+            <div className="flex items-center gap-2.5 flex-wrap text-[11px] bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80">
+              {activeCandidate.agreement_tier && (
+                <span
+                  className={`px-2 py-0.5 rounded-full font-semibold border ${getTierBadgeClass(
+                    activeCandidate.agreement_tier
+                  )}`}
+                >
+                  {activeCandidate.agreement_tier}
+                </span>
+              )}
+              {activeCandidate.consecutive_alert_slices !== null && activeCandidate.consecutive_alert_slices !== undefined && (
+                <span className="px-2 py-0.5 rounded-full font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1 font-mono">
+                  <Flame className="w-3 h-3 text-amber-400" />
+                  {activeCandidate.consecutive_alert_slices} Consecutive Periods
+                </span>
+              )}
+              {activeCandidate.avg_peak_score !== null && activeCandidate.avg_peak_score !== undefined && (
+                <span className="font-mono text-slate-300">
+                  Avg Peak: <strong className="text-rose-400">{activeCandidate.avg_peak_score.toFixed(2)}</strong>
+                </span>
+              )}
+              <span className="text-slate-600">·</span>
+              <span className="font-mono text-slate-300">
+                Peak: <strong>{activeCandidate.peak_score !== null && activeCandidate.peak_score !== undefined ? activeCandidate.peak_score.toFixed(2) : "—"}</strong>
+              </span>
+              <span className="text-slate-600">·</span>
+              <span className="font-mono text-slate-300">
+                Latest: <strong>{activeCandidate.latest_score !== null && activeCandidate.latest_score !== undefined ? activeCandidate.latest_score.toFixed(2) : "—"}</strong>
+              </span>
+              <span className="text-slate-600">·</span>
+              <span className="font-mono text-slate-300">
+                Count: <strong>{activeCandidate.count.toLocaleString()}</strong>
+              </span>
+              <span className="text-slate-600">·</span>
+              <span className="text-slate-400">
+                Alerted: <strong>{activeCandidate.slices_alerted}/{activeCandidate.total_slices} slices</strong>
+              </span>
+              {activeCandidate.first_onset && (
+                <>
+                  <span className="text-slate-600">·</span>
+                  <span className="text-rose-400 font-mono">Onset: {formatTimestampTick(activeCandidate.first_onset)}</span>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Interactive Legend */}
           {viewMode === "compare" ? (
@@ -1467,7 +1552,6 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
               </div>
             </div>
           )}
-        </div>
 
         {/* SVG Canvas Area */}
         {loadingTrajectory ? (
@@ -2002,6 +2086,262 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
         )}
       </div>
       )}
+
+      {/* Interactive Candidate Signals Table (Underneath Chart) */}
+      <div className="bg-slate-900/90 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-400">
+              <Table className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>Longitudinal Signal Results Table</span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-indigo-300 border border-slate-700">
+                  {filteredCandidates.length} {filteredCandidates.length === 1 ? "pair" : "pairs"}
+                </span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Click any row to graphically inspect its temporal trajectory above. Ranked by consecutive alert streak and peak strength.
+              </p>
+            </div>
+          </div>
+
+          {/* Table Filters & Sort Controls */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="relative min-w-[200px]">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setTablePage(1);
+                }}
+                placeholder="Filter by drug or event..."
+                className="w-full pl-8 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-indigo-500 transition"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                    setTablePage(1);
+                  }}
+                  className="absolute right-2 top-2 text-slate-500 hover:text-slate-300"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 text-xs">
+              <span className="text-slate-400 font-medium">Sort by:</span>
+              <select
+                value={sortCriteria}
+                onChange={(e) => {
+                  setSortCriteria(e.target.value as any);
+                  setTablePage(1);
+                }}
+                className="bg-transparent text-white font-medium outline-none cursor-pointer"
+              >
+                <option value="consecutive" className="bg-slate-900 text-white">🔥 Consecutive Periods (High to Low)</option>
+                <option value="avg_peak" className="bg-slate-900 text-white">Avg Peak Strength (High to Low)</option>
+                <option value="peak_score" className="bg-slate-900 text-white">Peak Score</option>
+                <option value="latest_score" className="bg-slate-900 text-white">Latest Score</option>
+                <option value="slices_alerted" className="bg-slate-900 text-white">Slices Alerted</option>
+                <option value="onset" className="bg-slate-900 text-white">Earliest Onset Date</option>
+                <option value="count" className="bg-slate-900 text-white">Report Count (N)</option>
+                {(hasConsensus || viewMode === "compare") && (
+                  <option value="consensus_score" className="bg-slate-900 text-white">Consensus Score</option>
+                )}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Results Grid / Table */}
+        {filteredCandidates.length === 0 ? (
+          <div className="py-16 text-center text-slate-500 space-y-2">
+            <LineChart className="w-8 h-8 text-slate-700 mx-auto" />
+            <p className="text-sm font-medium text-slate-400">
+              {candidateSignals.length === 0
+                ? "No longitudinal signals computed yet."
+                : "No matching signals found."}
+            </p>
+            <p className="text-xs text-slate-600 max-w-md mx-auto">
+              {candidateSignals.length === 0
+                ? "Run a longitudinal analysis above to calculate temporal trajectories and detect alerts across time slices."
+                : "Try adjusting your search filter or sort criteria."}
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  <th className="py-3 px-3">Product / Device</th>
+                  <th className="py-3 px-3">Adverse Event</th>
+                  <th className="py-3 px-3 text-center">Consecutive Signal Periods</th>
+                  <th className="py-3 px-3 text-right">Avg Signal Strength (Peaks)</th>
+                  <th className="py-3 px-3 text-right">Peak Score</th>
+                  <th className="py-3 px-3 text-center">Alert Slices</th>
+                  <th className="py-3 px-3 text-center">First Onset</th>
+                  {(hasConsensus || viewMode === "compare") && (
+                    <th className="py-3 px-3 text-center">Consensus</th>
+                  )}
+                  <th className="py-3 px-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/50">
+                {paginatedCandidates.map((pair) => {
+                  const isSelected =
+                    pair.product.toLowerCase() === selectedProduct.toLowerCase() &&
+                    pair.adverse_event.toLowerCase() === selectedAE.toLowerCase();
+
+                  const streak = pair.consecutive_alert_slices ?? 0;
+                  const streakClass =
+                    streak >= 4
+                      ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
+                      : streak >= 2
+                      ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                      : "bg-slate-800 text-slate-400 border-slate-700";
+
+                  const slicePct =
+                    pair.total_slices > 0
+                      ? Math.round((pair.slices_alerted / pair.total_slices) * 100)
+                      : 0;
+
+                  return (
+                    <tr
+                      key={`${pair.product}-${pair.adverse_event}`}
+                      onClick={() => handleSelectPair(pair.product, pair.adverse_event)}
+                      className={`cursor-pointer transition group ${
+                        isSelected
+                          ? "bg-indigo-600/20 hover:bg-indigo-600/30 border-l-2 border-indigo-500"
+                          : "hover:bg-slate-800/50"
+                      }`}
+                    >
+                      <td className="py-2.5 px-3">
+                        <span className="font-semibold text-white group-hover:text-indigo-300 transition">
+                          {pair.product}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-300 font-medium">
+                        {pair.adverse_event}
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border font-mono ${streakClass}`}
+                        >
+                          <Flame className={`w-3 h-3 ${streak >= 2 ? "text-amber-400 animate-pulse" : "text-slate-500"}`} />
+                          {streak} {streak === 1 ? "period" : "periods"}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono">
+                        {pair.avg_peak_score !== null && pair.avg_peak_score !== undefined ? (
+                          <span className="font-bold text-rose-400">
+                            {pair.avg_peak_score.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-slate-600">—</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono text-slate-200">
+                        {pair.peak_score !== null && pair.peak_score !== undefined ? (
+                          pair.peak_score.toFixed(2)
+                        ) : (
+                          <span className="text-slate-600">—</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        <div className="inline-flex flex-col items-center gap-1 min-w-[70px]">
+                          <span className="text-[11px] font-mono text-slate-300">
+                            {pair.slices_alerted}/{pair.total_slices} ({slicePct}%)
+                          </span>
+                          <div className="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-indigo-500 rounded-full"
+                              style={{ width: `${slicePct}%` }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-mono text-[11px] text-slate-400">
+                        {pair.first_onset ? formatTimestampTick(pair.first_onset) : "—"}
+                      </td>
+                      {(hasConsensus || viewMode === "compare") && (
+                        <td className="py-2.5 px-3 text-center">
+                          {pair.agreement_tier ? (
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${getTierBadgeClass(
+                                pair.agreement_tier
+                              )}`}
+                            >
+                              {pair.agreement_tier}
+                            </span>
+                          ) : (
+                            <span className="text-slate-600">—</span>
+                          )}
+                        </td>
+                      )}
+                      <td className="py-2.5 px-3 text-right">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectPair(pair.product, pair.adverse_event);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 ml-auto transition ${
+                            isSelected
+                              ? "bg-indigo-600 text-white shadow-sm"
+                              : "bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
+                          }`}
+                        >
+                          <LineChart className="w-3.5 h-3.5" />
+                          <span>{isSelected ? "Active" : "Inspect"}</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Pagination footer */}
+        {filteredCandidates.length > tableRowsPerPage && (
+          <div className="flex items-center justify-between pt-3 border-t border-slate-800 text-xs text-slate-400">
+            <span>
+              Showing {(tablePage - 1) * tableRowsPerPage + 1} -{" "}
+              {Math.min(tablePage * tableRowsPerPage, filteredCandidates.length)} of{" "}
+              {filteredCandidates.length} candidate signals
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setTablePage((p) => Math.max(1, p - 1))}
+                disabled={tablePage === 1}
+                className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition"
+              >
+                Previous
+              </button>
+              <span className="font-mono text-slate-300">
+                Page {tablePage} of {Math.ceil(filteredCandidates.length / tableRowsPerPage)}
+              </span>
+              <button
+                onClick={() =>
+                  setTablePage((p) =>
+                    Math.min(Math.ceil(filteredCandidates.length / tableRowsPerPage), p + 1)
+                  )
+                }
+                disabled={tablePage >= Math.ceil(filteredCandidates.length / tableRowsPerPage)}
+                className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
