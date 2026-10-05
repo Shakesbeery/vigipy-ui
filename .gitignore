@@ -1,8 +1,33 @@
+# Node dependencies
 node_modules/
-build/
-dist/
-coverage/
-.DS_Store
-*.log
+.pnpm-store/
+.npmrc
+
+# Python cache & compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Environment and secrets
 .env*
 !.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary & debug files
+*.log
+temp_*
+scratch/
+.cache/
+run_vite.*
+*.xlsx
+!tests/*.xlsx
+*.parquet
+
+# IDE files
+.vscode/
+.idea/
