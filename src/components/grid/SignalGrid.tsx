@@ -126,9 +126,18 @@ export const SignalGrid: React.FC<SignalGridProps> = ({
     loadData();
   }, [loadData]);
 
+  const hasActiveFilters =
+    Boolean(search) ||
+    selectedTier !== "All" ||
+    minCount !== "" ||
+    minVotes !== "" ||
+    minScore !== "";
+
   // Reset pagination, filters, and immediately reload data upon external refreshKey change (rerun / dataset swap)
+  const prevRefreshKeyRef = useRef<any>(refreshKey);
   useEffect(() => {
-    if (refreshKey !== undefined && refreshKey !== null) {
+    if (refreshKey !== undefined && refreshKey !== null && refreshKey !== prevRefreshKeyRef.current) {
+      prevRefreshKeyRef.current = refreshKey;
       setPage(1);
       setSelectedTier("All");
       setMinVotes("");
@@ -136,20 +145,19 @@ export const SignalGrid: React.FC<SignalGridProps> = ({
       setMinCount("");
       setSearch("");
       setDebouncedSearch("");
-      loadData();
     }
-  }, [refreshKey, loadData]);
+  }, [refreshKey]);
 
-  // Auto-refresh signals table periodically (every 3s) if table is currently empty
-  // so newly completed results populate automatically without requiring user interaction
+  // Auto-refresh signals table periodically (every 3s) if table is currently empty AND no filters are applied,
+  // so newly completed results populate automatically without interfering with active user filters
   useEffect(() => {
-    if (data.rows.length === 0 && !loading) {
+    if (data.rows.length === 0 && !loading && !hasActiveFilters && data.total_records === 0) {
       const timer = setInterval(() => {
         loadData();
       }, 3000);
       return () => clearInterval(timer);
     }
-  }, [data.rows.length, loading, loadData]);
+  }, [data.rows.length, data.total_records, loading, hasActiveFilters, loadData]);
 
   // Handle column sort toggle
   const handleSort = (columnKey: string) => {
@@ -165,13 +173,6 @@ export const SignalGrid: React.FC<SignalGridProps> = ({
   const totalPages = Math.max(1, Math.ceil(data.filtered_records / pageSize));
   const startRow = data.filtered_records === 0 ? 0 : (page - 1) * pageSize + 1;
   const endRow = Math.min(page * pageSize, data.filtered_records);
-
-  const hasActiveFilters =
-    Boolean(search) ||
-    selectedTier !== "All" ||
-    minCount !== "" ||
-    minVotes !== "" ||
-    minScore !== "";
 
   const handleClearFilters = () => {
     setSearch("");

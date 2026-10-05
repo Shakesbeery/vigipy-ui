@@ -243,8 +243,8 @@ class Contingency2x2Response(BaseModel):
 # --- Longitudinal Schemas ---
 
 class LongitudinalRunRequest(BaseModel):
-    method: Literal["prr", "ror", "rfet", "bcpnn", "gps", "lasso", "all"] = "bcpnn"
-    methods: Optional[List[Literal["prr", "ror", "rfet", "bcpnn", "gps", "lasso"]]] = None
+    method: Literal["prr", "ror", "rfet", "bcpnn", "gps", "lasso", "score_da", "score", "all"] = "bcpnn"
+    methods: Optional[List[Literal["prr", "ror", "rfet", "bcpnn", "gps", "lasso", "score_da", "score"]]] = None
     time_unit: Literal["YE", "QE", "ME"] = "YE"
     mode: Literal["cumulative", "disjoint"] = "cumulative"
     include_gaps: bool = False
@@ -253,7 +253,7 @@ class LongitudinalRunRequest(BaseModel):
     decision_thres: Optional[float] = None
     relative_risk: Optional[float] = None
     ranking_statistic: Optional[str] = None
-    continuity_correction: Optional[bool] = None
+    continuity_correction: Optional[Union[float, bool]] = None
     alpha: Optional[float] = None
 
 

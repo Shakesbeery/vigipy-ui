@@ -8,6 +8,8 @@ interface MultiAELongitudinalChartProps {
   signals: LongitudinalSignalItem[];
   activeMethod: string;
   onInspectSignal?: (product: string, adverseEvent: string) => void;
+  onSelectTop?: (count: number) => void;
+  onClearSelection?: () => void;
   className?: string;
 }
 
@@ -39,6 +41,8 @@ export const MultiAELongitudinalChart: React.FC<MultiAELongitudinalChartProps> =
   signals,
   activeMethod,
   onInspectSignal,
+  onSelectTop,
+  onClearSelection,
   className = "",
 }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -46,8 +50,8 @@ export const MultiAELongitudinalChart: React.FC<MultiAELongitudinalChartProps> =
   const [loading, setLoading] = useState<boolean>(false);
   const [hoveredSeries, setHoveredSeries] = useState<string | null>(null);
 
-  // Take top 8 signals for multi-trajectory comparative view
-  const topSignals = useMemo(() => signals.slice(0, 8), [signals]);
+  // Directly plot the user-selected signals (from table checkboxes)
+  const topSignals = useMemo(() => signals, [signals]);
 
   // Load trajectories for the top signals
   useEffect(() => {
@@ -240,9 +244,30 @@ export const MultiAELongitudinalChart: React.FC<MultiAELongitudinalChartProps> =
           <span>Loading multi-signal longitudinal trajectories...</span>
         </div>
       ) : seriesList.length === 0 ? (
-        <div className="w-full h-80 flex flex-col items-center justify-center gap-2 text-slate-500 text-xs font-mono">
-          <span>No longitudinal candidate signals to compare.</span>
-          <span className="text-[11px] text-slate-600">Run a longitudinal model in the single-pair view first.</span>
+        <div className="w-full h-80 flex flex-col items-center justify-center gap-3 text-slate-400 text-xs p-6 text-center border border-slate-800/80 rounded-2xl bg-slate-950/40">
+          <Layers className="w-8 h-8 text-cyan-400/60 mx-auto" />
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-slate-200">No Pairs Selected for Multi-Trajectory Plotting</p>
+            <p className="text-xs text-slate-400 max-w-md mx-auto">
+              Check the boxes next to signals in the results table below to plot and compare their trajectory curves simultaneously on this chart.
+            </p>
+          </div>
+          {onSelectTop && (
+            <div className="flex items-center gap-2 mt-2">
+              <button
+                onClick={() => onSelectTop(3)}
+                className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow transition"
+              >
+                Select Top 3 Pairs
+              </button>
+              <button
+                onClick={() => onSelectTop(5)}
+                className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
+              >
+                Select Top 5 Pairs
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="relative flex justify-center w-full overflow-hidden">

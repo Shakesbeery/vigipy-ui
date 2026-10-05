@@ -617,7 +617,7 @@ def execute_longitudinal(
 
     methods_to_run: List[str] = []
     if req.method == "all":
-        methods_to_run = ["prr", "ror", "bcpnn", "gps"]
+        methods_to_run = ["prr", "ror", "bcpnn", "gps", "score_da"]
     elif req.methods:
         methods_to_run = [m.lower() for m in req.methods if m.lower() in method_funcs]
     else:
@@ -768,7 +768,13 @@ def extract_single_method_trajectory(
             ci_l = float(row["CI Lower"]) if "CI Lower" in row and not pd.isna(row["CI Lower"]) else None
             if ci_l is None and "quantile" in row and not pd.isna(row["quantile"]):
                 ci_l = float(row["quantile"])
+            if ci_l is None and "SER Lower" in row and not pd.isna(row["SER Lower"]):
+                ci_l = float(row["SER Lower"])
+
             ci_u = float(row["CI Upper"]) if "CI Upper" in row and not pd.isna(row["CI Upper"]) else None
+            if ci_u is None and "SER Upper" in row and not pd.isna(row["SER Upper"]):
+                ci_u = float(row["SER Upper"])
+
             cnt = float(row["Count"]) if "Count" in row and not pd.isna(row["Count"]) else None
 
             # Method-specific threshold check using calculated signals or exact rule

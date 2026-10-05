@@ -23,12 +23,25 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
   className = "",
 }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const [data, setData] = useState<VolcanoResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [hoveredPoint, setHoveredPoint] = useState<VolcanoPoint | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<string>(activeMethod);
+
+  const handlePointHover = (e: React.MouseEvent, pt: VolcanoPoint) => {
+    setHoveredPoint(pt);
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const relX = e.clientX - rect.left;
+    const relY = e.clientY - rect.top;
+    const isRight = relX > rect.width * 0.55 || relX > rect.width - 270;
+    const posX = isRight ? Math.max(10, relX - 250) : relX + 16;
+    const posY = Math.max(10, relY - 45);
+    setTooltipPos({ x: posX, y: posY });
+  };
 
   // Zooming state
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
@@ -309,7 +322,7 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
           <span className="text-[11px] text-slate-600">Run an analysis first to view the Volcano plot.</span>
         </div>
       ) : (
-        <div className="relative flex justify-center w-full overflow-hidden">
+        <div ref={containerRef} className="relative flex justify-center w-full">
           <svg
             ref={svgRef}
             viewBox={`0 0 ${width} ${height}`}
@@ -484,13 +497,8 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
                   opacity={isHovered ? 1.0 : (isSignal ? 0.9 : 0.4)}
                   className="cursor-pointer"
                   onClick={() => onSelectSignal(pt.product, pt.adverse_event)}
-                  onMouseEnter={(e) => {
-                    setHoveredPoint(pt);
-                    setTooltipPos({ x: e.clientX, y: e.clientY });
-                  }}
-                  onMouseMove={(e) => {
-                    setTooltipPos({ x: e.clientX, y: e.clientY });
-                  }}
+                  onMouseEnter={(e) => handlePointHover(e, pt)}
+                  onMouseMove={(e) => handlePointHover(e, pt)}
                   onMouseLeave={() => setHoveredPoint(null)}
                 />
               );
@@ -514,8 +522,8 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
           {/* Hover Tooltip */}
           {hoveredPoint && tooltipPos && (
             <div
-              className="fixed z-50 pointer-events-none rounded-xl border border-slate-700 bg-slate-900/95 p-3 text-xs text-white shadow-2xl backdrop-blur max-w-xs animate-in fade-in duration-100"
-              style={{ left: tooltipPos.x + 12, top: tooltipPos.y - 40 }}
+              className="absolute z-50 pointer-events-none rounded-xl border border-slate-700 bg-slate-900/95 p-3 text-xs text-white shadow-2xl backdrop-blur max-w-xs transition-none"
+              style={{ left: `${tooltipPos.x}px`, top: `${tooltipPos.y}px` }}
             >
               <div className="font-semibold text-slate-100 text-sm">{hoveredPoint.product}</div>
               <div className="text-slate-300 font-medium mb-1.5">{hoveredPoint.adverse_event}</div>

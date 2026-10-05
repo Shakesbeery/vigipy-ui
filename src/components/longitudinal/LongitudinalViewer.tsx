@@ -189,6 +189,16 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
   const [tableRowsPerPage, setTableRowsPerPage] = useState<number>(10);
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
 
+  // Multi-signal Trajectory Selection State (Explicit selection from table checkboxes)
+  const [selectedMultiKeys, setSelectedMultiKeys] = useState<string[]>([]);
+
+  const toggleMultiSelectPair = (prod: string, ae: string) => {
+    const key = `${prod.toLowerCase()}__${ae.toLowerCase()}`;
+    setSelectedMultiKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  };
+
   const handleSelectPair = (prod: string, ae: string) => {
     setSelectedProduct(prod);
     setSelectedAE(ae);
@@ -347,7 +357,7 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
 
   // Handle Run Longitudinal Calculation
   const handleRunLongitudinal = async (runMethod?: LongitudinalMethod) => {
-    const targetM = runMethod || method;
+    const targetM = runMethod || (viewMode === "compare" ? "all" : method);
     setRunning(true);
     setProgress(0.05);
     setStatusMessage(
@@ -401,8 +411,11 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
             setStatusMessage("Longitudinal modeling completed.");
             const activeM = targetM === "all" ? "all" : targetM;
             loadLongitudinalSignals(activeM);
+            if (targetM === "all") {
+              setViewMode("compare");
+            }
             if (selectedProduct && selectedAE) {
-              loadTrajectory(selectedProduct, selectedAE, targetM === "all" ? method : targetM);
+              loadTrajectory(selectedProduct, selectedAE, targetM === "all" ? "all" : targetM);
             }
           } else if (status.status === "failed") {
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
@@ -787,6 +800,42 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
     return filteredCandidates.slice(start, start + tableRowsPerPage);
   }, [filteredCandidates, tablePage, tableRowsPerPage]);
 
+  const multiSelectedSignals = useMemo(() => {
+    const keySet = new Set(selectedMultiKeys);
+    return candidateSignals.filter((c) =>
+      keySet.has(`${c.product.toLowerCase()}__${c.adverse_event.toLowerCase()}`)
+    );
+  }, [candidateSignals, selectedMultiKeys]);
+
+  const allPageMultiSelected =
+    paginatedCandidates.length > 0 &&
+    paginatedCandidates.every((c) =>
+      selectedMultiKeys.includes(`${c.product.toLowerCase()}__${c.adverse_event.toLowerCase()}`)
+    );
+
+  const handleToggleSelectAllPage = () => {
+    const pageKeys = paginatedCandidates.map(
+      (c) => `${c.product.toLowerCase()}__${c.adverse_event.toLowerCase()}`
+    );
+    if (allPageMultiSelected) {
+      const pageSet = new Set(pageKeys);
+      setSelectedMultiKeys((prev) => prev.filter((k) => !pageSet.has(k)));
+    } else {
+      setSelectedMultiKeys((prev) => Array.from(new Set([...prev, ...pageKeys])));
+    }
+  };
+
+  const handleSelectTopMulti = (count: number) => {
+    const topKeys = filteredCandidates
+      .slice(0, count)
+      .map((c) => `${c.product.toLowerCase()}__${c.adverse_event.toLowerCase()}`);
+    setSelectedMultiKeys(topKeys);
+  };
+
+  const handleClearMultiSelection = () => {
+    setSelectedMultiKeys([]);
+  };
+
   return (
     <div className="flex flex-col h-full bg-slate-950 text-slate-100 overflow-y-auto p-4 sm:p-6 space-y-6">
       {/* Top Banner & Signal Selection */}
@@ -967,14 +1016,14 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
               onClick={() => handleRunLongitudinal("all")}
               disabled={running}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition disabled:opacity-50"
-              title="Compute longitudinal trajectories for all methods (PRR, ROR, BCPNN, GPS)"
+              title="Compute longitudinal trajectories for all methods (PRR, ROR, BCPNN, GPS, SCORE-DA)"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${running ? "animate-spin text-indigo-400" : ""}`} />
               <span>Compute All Methods</span>
             </button>
 
             <button
-              onClick={() => handleRunLongitudinal(method)}
+              onClick={() => handleRunLongitudinal(viewMode === "compare" ? "all" : method)}
               disabled={running}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-md shadow-blue-500/20 disabled:opacity-50 transition active:scale-95"
             >
@@ -1266,13 +1315,15 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
       {/* Interactive SVG Chart Container / Multi-Signal Comparative Trajectory */}
       {viewMode === "multi_signals" ? (
         <MultiAELongitudinalChart
-          signals={candidateSignals}
+          signals={multiSelectedSignals}
           activeMethod={method}
           onInspectSignal={(prod, ae) => {
             setSelectedProduct(prod);
             setSelectedAE(ae);
             setViewMode("single");
           }}
+          onSelectTop={handleSelectTopMulti}
+          onClearSelection={handleClearMultiSelection}
         />
       ) : (
         <div ref={chartContainerRef} className="bg-slate-900/90 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-4">
@@ -2134,6 +2185,49 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
               )}
             </div>
 
+            {/* Multi-Selection Controls */}
+            {selectedMultiKeys.length > 0 && (
+              <div className="flex items-center gap-2 bg-indigo-950/60 border border-indigo-500/40 px-3 py-1.5 rounded-xl text-xs">
+                <span className="font-semibold text-indigo-300">
+                  {selectedMultiKeys.length} {selectedMultiKeys.length === 1 ? "pair" : "pairs"} selected
+                </span>
+                {viewMode !== "multi_signals" ? (
+                  <button
+                    onClick={() => {
+                      setViewMode("multi_signals");
+                      chartContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}
+                    className="px-2 py-0.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-[11px] transition"
+                  >
+                    Plot Trajectories
+                  </button>
+                ) : null}
+                <button
+                  onClick={handleClearMultiSelection}
+                  className="text-slate-400 hover:text-slate-200 text-[11px] underline"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => handleSelectTopMulti(3)}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white text-xs font-medium transition"
+                title="Select top 3 ranked pairs for multi-signal trajectory comparison"
+              >
+                Top 3
+              </button>
+              <button
+                onClick={() => handleSelectTopMulti(5)}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white text-xs font-medium transition"
+                title="Select top 5 ranked pairs for multi-signal trajectory comparison"
+              >
+                Top 5
+              </button>
+            </div>
+
             <div className="flex items-center gap-1.5 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 text-xs">
               <span className="text-slate-400 font-medium">Sort by:</span>
               <select
@@ -2179,6 +2273,15 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b border-slate-800 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  <th className="py-3 px-3 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={allPageMultiSelected}
+                      onChange={handleToggleSelectAllPage}
+                      title="Select all pairs on this page for multi-signal comparison"
+                      className="rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 bg-slate-900 cursor-pointer w-3.5 h-3.5"
+                    />
+                  </th>
                   <th className="py-3 px-3">Product / Device</th>
                   <th className="py-3 px-3">Adverse Event</th>
                   <th className="py-3 px-3 text-center">Consecutive Signal Periods</th>
@@ -2194,6 +2297,8 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-800/50">
                 {paginatedCandidates.map((pair) => {
+                  const pairKey = `${pair.product.toLowerCase()}__${pair.adverse_event.toLowerCase()}`;
+                  const isMultiSelected = selectedMultiKeys.includes(pairKey);
                   const isSelected =
                     pair.product.toLowerCase() === selectedProduct.toLowerCase() &&
                     pair.adverse_event.toLowerCase() === selectedAE.toLowerCase();
@@ -2218,9 +2323,23 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
                       className={`cursor-pointer transition group ${
                         isSelected
                           ? "bg-indigo-600/20 hover:bg-indigo-600/30 border-l-2 border-indigo-500"
+                          : isMultiSelected
+                          ? "bg-indigo-950/30 hover:bg-indigo-950/40 border-l-2 border-indigo-400/60"
                           : "hover:bg-slate-800/50"
                       }`}
                     >
+                      <td
+                        className="py-2.5 px-3 text-center"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isMultiSelected}
+                          onChange={() => toggleMultiSelectPair(pair.product, pair.adverse_event)}
+                          title="Select for multi-signal trajectory comparison"
+                          className="rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 bg-slate-900 cursor-pointer w-3.5 h-3.5"
+                        />
+                      </td>
                       <td className="py-2.5 px-3">
                         <span className="font-semibold text-white group-hover:text-indigo-300 transition">
                           {pair.product}
