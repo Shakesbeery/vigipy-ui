@@ -127,15 +127,21 @@ export const MultiAELongitudinalChart: React.FC<MultiAELongitudinalChartProps> =
   }, [seriesList]);
 
   // Y Scale bounds
-  const maxY = useMemo(() => {
+  const { minY, maxY } = useMemo(() => {
+    let min = 0.0;
     let max = 2.0;
     seriesList.forEach((s) => {
       if (!s.visible) return;
       s.points.forEach((p) => {
-        if (p.score !== null && p.score > max) max = p.score;
+        if (p.score !== null) {
+          if (p.score < min) min = p.score;
+          if (p.score > max) max = p.score;
+        }
       });
     });
-    return Math.ceil(max * 1.15);
+    const lower = min < 0 ? Math.floor(min * 1.15) : 0;
+    const upper = Math.ceil(max * 1.15);
+    return { minY: lower, maxY: upper };
   }, [seriesList]);
 
   const scaleX = (idx: number) => {
@@ -144,7 +150,8 @@ export const MultiAELongitudinalChart: React.FC<MultiAELongitudinalChartProps> =
   };
 
   const scaleY = (val: number) => {
-    return padding.top + innerHeight - (val / maxY) * innerHeight;
+    const range = maxY - minY || 1;
+    return padding.top + innerHeight - ((val - minY) / range) * innerHeight;
   };
 
   return (
@@ -246,7 +253,7 @@ export const MultiAELongitudinalChart: React.FC<MultiAELongitudinalChartProps> =
           >
             {/* Grid */}
             {[0, 0.25, 0.5, 0.75, 1.0].map((frac) => {
-              const yVal = frac * maxY;
+              const yVal = minY + frac * (maxY - minY);
               const py = scaleY(yVal);
               return (
                 <g key={`gy-${frac}`}>
@@ -272,6 +279,19 @@ export const MultiAELongitudinalChart: React.FC<MultiAELongitudinalChartProps> =
                 </g>
               );
             })}
+
+            {/* Zero Baseline when negative range is present */}
+            {minY < 0 && (
+              <line
+                x1={padding.left}
+                y1={scaleY(0)}
+                x2={padding.left + innerWidth}
+                y2={scaleY(0)}
+                stroke="#64748b"
+                strokeWidth="1"
+                strokeDasharray="2 2"
+              />
+            )}
 
             {/* Axes */}
             <line

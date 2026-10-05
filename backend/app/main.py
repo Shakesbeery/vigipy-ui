@@ -111,7 +111,9 @@ async def upload_file(
     upload_dir = os.path.join(tempfile.gettempdir(), "vigipy_uploads")
     os.makedirs(upload_dir, exist_ok=True)
 
-    clean_name = os.path.basename(filename or "uploaded_data.csv")
+    raw_name = os.path.basename(filename or "uploaded_data.csv")
+    base, ext = os.path.splitext(raw_name)
+    clean_name = f"{base}_{uuid.uuid4().hex[:8]}{ext}"
     dest_path = os.path.join(upload_dir, clean_name)
 
     total_bytes = 0

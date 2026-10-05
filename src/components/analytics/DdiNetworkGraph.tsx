@@ -6,6 +6,7 @@ import { exportSvgToFile, exportSvgToPng } from "../../core/chart_export";
 
 interface DdiNetworkGraphProps {
   onSelectPair?: (drug: string, event: string) => void;
+  onSelectSignal?: (drug: string, event: string) => void;
   className?: string;
 }
 
@@ -16,7 +17,11 @@ const ARCHETYPE_COLORS: Record<string, { stroke: string; badge: string }> = {
   MULTI_HIT: { stroke: "#8b5cf6", badge: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
 };
 
-export const DdiNetworkGraph: React.FC<DdiNetworkGraphProps> = ({ onSelectPair, className = "" }) => {
+export const DdiNetworkGraph: React.FC<DdiNetworkGraphProps> = ({
+  onSelectPair,
+  onSelectSignal,
+  className = "",
+}) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [data, setData] = useState<DDINetworkResponse | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<string>("ALL");
@@ -219,7 +224,10 @@ export const DdiNetworkGraph: React.FC<DdiNetworkGraphProps> = ({ onSelectPair, 
                   className="cursor-pointer transition-all hover:opacity-100"
                   onMouseEnter={() => setHoveredEdge(edge)}
                   onMouseLeave={() => setHoveredEdge(null)}
-                  onClick={() => onSelectPair && onSelectPair(edge.drug_a, edge.event)}
+                  onClick={() => {
+                    if (onSelectSignal) onSelectSignal(edge.drug_a, edge.event);
+                    else if (onSelectPair) onSelectPair(edge.drug_a, edge.event);
+                  }}
                 />
               );
             })}

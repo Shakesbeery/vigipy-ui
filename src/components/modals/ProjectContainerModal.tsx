@@ -60,7 +60,7 @@ export const ProjectContainerModal: React.FC<ProjectContainerModalProps> = ({
     reader.onload = (event) => {
       try {
         const parsed = JSON.parse(event.target?.result as string);
-        if (parsed.app === "vigipy-studio" && parsed.configuration) {
+        if ((parsed.app === "vigipy-studio" || parsed.app === "vigipy-ui") && parsed.configuration) {
           if (onRestoreConfig) {
             onRestoreConfig(parsed.configuration);
           }

@@ -284,10 +284,11 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
 
   useEffect(() => {
     if (selectedProduct && selectedAE) {
-      loadTrajectory(selectedProduct, selectedAE, method);
+      const activeMethodToLoad = viewMode === "compare" ? "all" : method;
+      loadTrajectory(selectedProduct, selectedAE, activeMethodToLoad);
       if (onSignalChange) onSignalChange(selectedProduct, selectedAE);
     }
-  }, [selectedProduct, selectedAE, method, cadenceLabel, mode]);
+  }, [selectedProduct, selectedAE, method, cadenceLabel, mode, viewMode]);
 
 
   // Handle Run Longitudinal Calculation

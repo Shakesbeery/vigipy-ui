@@ -32,6 +32,7 @@ interface AppHeaderProps {
   onOpenProjectContainer?: () => void;
   backendOnline: boolean;
   totalSignals: number;
+  vigipyVersion?: string;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -50,6 +51,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onOpenProjectContainer,
   backendOnline,
   totalSignals,
+  vigipyVersion,
 }) => {
   return (
     <header className="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur px-6 flex items-center justify-between select-none shrink-0 z-30">
@@ -67,7 +69,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               title="View vigipy version and PyPI release info"
             >
               <Package className="w-3 h-3 text-blue-400" />
-              <span>vigipy v3.4.0</span>
+              <span>{vigipyVersion ? `vigipy v${vigipyVersion}` : "vigipy v3.4.0"}</span>
             </button>
           </div>
           <p className="text-xs text-slate-400 hidden sm:block">

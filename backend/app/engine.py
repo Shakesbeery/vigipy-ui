@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -38,6 +39,26 @@ from .state import state
 logger = logging.getLogger("vigipy_ui.engine")
 
 
+def resolve_file_path(path: str) -> str:
+    """Resolve a file path across relative, working directory, and upload storage locations."""
+    if not path:
+        return path
+    if os.path.isabs(path) and os.path.exists(path):
+        return path
+
+    candidates = [
+        os.path.abspath(path),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), path),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "backend", os.path.basename(path)),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "public", os.path.basename(path)),
+        os.path.join(tempfile.gettempdir(), "vigipy_uploads", os.path.basename(path)),
+    ]
+    for cand in candidates:
+        if os.path.exists(cand):
+            return os.path.abspath(cand)
+    return os.path.abspath(path)
+
+
 def detect_file_encoding(file_path: str) -> str:
     """Detect basic file encoding or fallback to utf-8."""
     return "utf-8"
@@ -45,6 +66,7 @@ def detect_file_encoding(file_path: str) -> str:
 
 def get_file_preview(file_path: str, preview_count: int = 15) -> FilePreviewResponse:
     """Load preview rows, detect column types, and suggest default column mappings."""
+    file_path = resolve_file_path(file_path)
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -211,7 +233,7 @@ def ingest_data_file(
     if progress_cb:
         progress_cb(0.1, "Reading data file into memory...")
 
-    file_path = mapping.file_path
+    file_path = resolve_file_path(mapping.file_path)
     if state.full_raw_df is not None and (file_path == state.raw_file_path or not file_path):
         df = state.full_raw_df.copy()
     else:
@@ -230,6 +252,18 @@ def ingest_data_file(
 
     total_raw = len(df)
     logger.info(f"Loaded raw dataset with {total_raw:,} rows.")
+
+    # Validate that chosen product and adverse event columns actually exist in the dataset
+    missing_cols = []
+    if mapping.product_col not in df.columns:
+        missing_cols.append(f"Product column '{mapping.product_col}'")
+    if mapping.ae_col not in df.columns:
+        missing_cols.append(f"Adverse Event column '{mapping.ae_col}'")
+    if missing_cols:
+        raise ValueError(
+            f"Selected {', '.join(missing_cols)} not found in dataset columns: {list(df.columns)}. "
+            "Please re-select or verify column mappings."
+        )
 
     # 1. Handle Missing Count Column & Auto-Population
     active_count_col = mapping.count_col
@@ -464,6 +498,9 @@ def execute_analysis(
     if progress_cb:
         progress_cb(0.15, f"Executing {len(configs)} disproportionality method(s)...")
 
+    if cancel_cb and cancel_cb():
+        raise InterruptedError("Analysis cancelled by user.")
+
     # Run Consensus or Single
     if req.consensus and len(configs) >= 2:
         if progress_cb:
@@ -520,14 +557,26 @@ def execute_longitudinal(
 
     df = state.raw_df.copy()
     
-    # Rename columns to standard names for LongitudinalModel
+    # Robustly map columns to standard names for LongitudinalModel
+    p_col = state.column_mapping.get("product_col", "Product")
+    ae_col = state.column_mapping.get("ae_col", "Adverse Event")
+    c_col = state.column_mapping.get("count_col") or "_vigipy_auto_count"
+
     rename_map = {
-        state.column_mapping["product_col"]: "name",
-        state.column_mapping["ae_col"]: "AE",
-        state.column_mapping["count_col"]: "count",
+        p_col: "name",
+        ae_col: "AE",
         date_col: "date",
     }
+    if c_col in df.columns:
+        rename_map[c_col] = "count"
+    elif "count" not in df.columns:
+        df["count"] = 1
+
     df = df.rename(columns=rename_map)
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df = df.dropna(subset=["date"])
+    if df.empty:
+        raise ValueError("No valid date values found in the Date column for longitudinal modeling.")
 
     if progress_cb:
         progress_cb(0.1, f"Initializing longitudinal model with {req.time_unit} cadence...")

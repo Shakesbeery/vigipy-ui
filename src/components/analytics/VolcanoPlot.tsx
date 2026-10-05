@@ -53,7 +53,11 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
     loadData(selectedMethod);
   }, [selectedMethod]);
 
-  const points = data?.points || [];
+  const points = useMemo(() => {
+    return (data?.points || []).filter(
+      (p) => Number.isFinite(p.effect_size) && Number.isFinite(p.neg_log_p)
+    );
+  }, [data]);
 
   // Dimensions
   const width = 850;

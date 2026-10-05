@@ -105,9 +105,9 @@ export const SignalGrid: React.FC<SignalGridProps> = ({
         limit: pageSize,
         search: debouncedSearch.trim() || null,
         tiers: selectedTier === "All" ? null : [selectedTier],
-        min_count: minCount !== "" ? Number(minCount) : null,
-        min_votes: minVotes !== "" ? Number(minVotes) : null,
-        min_score: minScore !== "" ? Number(minScore) : null,
+        min_count: minCount !== "" && !isNaN(Number(minCount)) ? Number(minCount) : null,
+        min_votes: minVotes !== "" && !isNaN(Number(minVotes)) ? Number(minVotes) : null,
+        min_score: minScore !== "" && !isNaN(Number(minScore)) ? Number(minScore) : null,
         sort_by: sortBy,
         sort_dir: sortDir,
       };

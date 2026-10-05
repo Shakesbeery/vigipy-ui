@@ -182,10 +182,6 @@ export const ForestPlot: React.FC<ForestPlotProps> = ({
               <span className="w-2.5 h-2.5 rounded-sm bg-slate-400" />
               <span>Non-alert</span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 border-t-2 border-dashed border-amber-400/80" />
-              <span>Null ({nullValue.toFixed(1)})</span>
-            </div>
           </div>
 
           {/* Scale Switch */}

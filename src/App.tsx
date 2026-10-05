@@ -30,6 +30,7 @@ import {
   importResultsFile,
   fetchCurrentColumns,
   resetDataset,
+  fetchVigipyVersion,
 } from "./services/api";
 import {
   ColumnMappingRequest,
@@ -92,11 +93,12 @@ export const App: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [backendOnline, setBackendOnline] = useState<boolean>(false);
   const [totalSignals, setTotalSignals] = useState<number>(0);
+  const [vigipyVersion, setVigipyVersion] = useState<string>("3.4.0");
 
   // Active polling reference for analysis progress
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Check backend health periodically
+  // Check backend health and version periodically
   useEffect(() => {
     const checkHealth = async () => {
       try {
@@ -116,7 +118,19 @@ export const App: React.FC = () => {
       }
     };
 
+    const loadVersion = async () => {
+      try {
+        const v = await fetchVigipyVersion();
+        if (v?.vigipy_version) {
+          setVigipyVersion(v.vigipy_version);
+        }
+      } catch {
+        // Ignore fallback
+      }
+    };
+
     checkHealth();
+    loadVersion();
     const interval = setInterval(checkHealth, 4000);
     return () => clearInterval(interval);
   }, [dataSummary]);
@@ -321,6 +335,7 @@ export const App: React.FC = () => {
         onOpenProjectContainer={() => setIsProjectContainerOpen(true)}
         backendOnline={backendOnline}
         totalSignals={totalSignals}
+        vigipyVersion={vigipyVersion}
       />
 
       {/* Error Banner */}
@@ -679,8 +694,14 @@ export const App: React.FC = () => {
         onClose={() => setIsCodeViewerOpen(false)}
         code={generateVigipyPythonCode({
           config: analysisConfig,
-          datasetPath: "vigipy_surveillance.csv",
-          outputDir: "vigipy_output",
+          datasetName: "vigipy_surveillance.csv",
+          productCol: dataSummary?.product_col || "Product",
+          aeCol: dataSummary?.ae_col || "Adverse Event",
+          countCol: dataSummary?.count_col || undefined,
+          dateCol: dataSummary?.date_col || undefined,
+          targetDrug: selectedSignal?.product || "DRUG_NAME",
+          targetEvent: selectedSignal?.adverse_event || "EVENT_NAME",
+          vigipyVersion: vigipyVersion,
         })}
       />
     </div>
