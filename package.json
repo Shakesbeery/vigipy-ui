@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "start": "python run_app.py",
+    "dev": "node run_vite.js",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
