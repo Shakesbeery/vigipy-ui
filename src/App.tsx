@@ -585,6 +585,7 @@ export const App: React.FC = () => {
                 <div className="max-w-6xl mx-auto">
                   <LongitudinalViewer
                     initialSignal={longitudinalSignal}
+                    onOpenConfig={() => setIsConfigOpen(true)}
                     onSignalChange={(product, adverseEvent) => {
                       if (longitudinalSignal?.product !== product || longitudinalSignal?.adverse_event !== adverseEvent) {
                         setLongitudinalSignal({ product, adverse_event: adverseEvent } as SignalRow);

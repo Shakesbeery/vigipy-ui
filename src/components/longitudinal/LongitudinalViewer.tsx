@@ -11,6 +11,7 @@ import {
   EyeOff,
   Filter,
   Flame,
+  Grid3X3,
   Layers,
   LineChart,
   Play,
@@ -51,6 +52,8 @@ interface LongitudinalViewerProps {
   initialSignal?: SignalRow | { product: string; adverse_event: string } | null;
   /** Callback to notify parent of active signal change */
   onSignalChange?: (product: string, adverseEvent: string) => void;
+  /** Callback to open global method configuration modal */
+  onOpenConfig?: () => void;
 }
 
 const CADENCE_MAP: Record<LongitudinalCadenceLabel, LongitudinalCadence> = {
@@ -155,12 +158,13 @@ function formatTimestampTick(ts: string): string {
 export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
   initialSignal,
   onSignalChange,
+  onOpenConfig,
 }) => {
   // Configuration State
   const [method, setMethod] = useState<LongitudinalMethod>("bcpnn");
   const [cadenceLabel, setCadenceLabel] = useState<LongitudinalCadenceLabel>("Quarterly");
   const [mode, setMode] = useState<LongitudinalMode>("cumulative");
-  const [viewMode, setViewMode] = useState<"single" | "compare" | "multi_signals">("single");
+  const [viewMode, setViewMode] = useState<"single" | "compare" | "heatmap" | "multi_signals">("single");
 
   // Visible methods in multi-method comparative mode
   const [visibleMethods, setVisibleMethods] = useState<Record<string, boolean>>({
@@ -227,6 +231,7 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
   const [customThreshold, setCustomThreshold] = useState<string>(""); // empty = method default
   const [rankingStatistic, setRankingStatistic] = useState<string>("default"); // "default", "IC025", "IC", "EB05", "EBGM"
   const [lassoAlpha, setLassoAlpha] = useState<number>(0.01);
+  const [scoreFdr, setScoreFdr] = useState<number>(0.05);
   const [continuityCorrection, setContinuityCorrection] = useState<number>(0.5);
   const [relativeRisk, setRelativeRisk] = useState<number>(1.0);
 
@@ -240,6 +245,15 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
   const [loadingTrajectory, setLoadingTrajectory] = useState<boolean>(false);
   const [trajectoryError, setTrajectoryError] = useState<string | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [hoveredHeatmapCell, setHoveredHeatmapCell] = useState<{
+    method: string;
+    meta: MethodMeta;
+    timestamp: string;
+    pt: TrajectoryPoint;
+    minScore: number;
+    maxScore: number;
+    pos?: { x: number; y: number };
+  } | null>(null);
 
   // SVG Chart reference
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -366,7 +380,7 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
 
   useEffect(() => {
     if (selectedProduct && selectedAE) {
-      const activeMethodToLoad = viewMode === "compare" ? "all" : method;
+      const activeMethodToLoad = (viewMode === "compare" || viewMode === "heatmap") ? "all" : method;
       loadTrajectory(selectedProduct, selectedAE, activeMethodToLoad);
       if (onSignalChange) onSignalChange(selectedProduct, selectedAE);
     }
@@ -375,7 +389,7 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
 
   // Handle Run Longitudinal Calculation
   const handleRunLongitudinal = async (runMethod?: LongitudinalMethod) => {
-    const targetM = runMethod || (viewMode === "compare" ? "all" : method);
+    const targetM = runMethod || ((viewMode === "compare" || viewMode === "heatmap") ? "all" : method);
     setRunning(true);
     setProgress(0.05);
     setStatusMessage(
@@ -397,7 +411,9 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
       include_gaps: includeGaps,
       min_events: minEvents > 0 ? minEvents : 3,
       decay_half_life: effectiveDecay,
-      decision_thres: Number.isFinite(parsedThres) ? parsedThres : null,
+      decision_thres: Number.isFinite(parsedThres)
+        ? parsedThres
+        : (targetM === "score_da" || targetM === "score" ? scoreFdr : null),
       ranking_statistic: parsedStat,
       alpha: targetM === "lasso" || targetM === "all" ? lassoAlpha : null,
       continuity_correction:
@@ -498,9 +514,72 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
   // Chart Dimensions
   const chartWidth = 900;
   const chartHeight = 400;
-  const margin = { top: 40, right: 50, bottom: 50, left: 65 };
+  const margin = { top: 40, right: 50, bottom: 50, left: 80 };
   const innerWidth = chartWidth - margin.left - margin.right;
   const innerHeight = chartHeight - margin.top - margin.bottom;
+
+  // Heatmap Matrix Data Math
+  const heatmapData = useMemo(() => {
+    const seriesByMethod: Record<string, TrajectoryPoint[]> = {};
+    if (multiTrajectories && Object.keys(multiTrajectories).length > 0) {
+      Object.entries(multiTrajectories).forEach(([m, pts]) => {
+        if (pts && pts.length > 0) seriesByMethod[m.toUpperCase()] = pts;
+      });
+    } else if (trajectory && trajectory.length > 0) {
+      seriesByMethod[method.toUpperCase()] = trajectory;
+    }
+
+    const methodKeys = Object.keys(seriesByMethod);
+    if (methodKeys.length === 0) {
+      return { timestamps: [], rows: [], methodKeys: [] };
+    }
+
+    // Collect all timestamps sorted chronologically
+    const timestampSet = new Set<string>();
+    methodKeys.forEach((m) => {
+      seriesByMethod[m].forEach((pt) => {
+        if (pt.timestamp) timestampSet.add(pt.timestamp);
+      });
+    });
+    const sortedTimestamps = Array.from(timestampSet).sort();
+
+    // Map each method row
+    const rows = methodKeys.map((m) => {
+      const pts = seriesByMethod[m];
+      const ptByTime = new Map<string, TrajectoryPoint>();
+      pts.forEach((p) => ptByTime.set(p.timestamp, p));
+
+      const scores = pts
+        .map((p) => p.score)
+        .filter((s): s is number => s !== null && s !== undefined && !isNaN(s));
+      const minScore = scores.length > 0 ? Math.min(...scores) : 0;
+      const maxScore = scores.length > 0 ? Math.max(...scores) : 1;
+      const peakScore = scores.length > 0 ? Math.max(...scores) : null;
+      const alertPoints = pts.filter((p) => p.alert);
+      const firstOnset = alertPoints.length > 0 ? alertPoints[0].timestamp : null;
+      const alertCount = alertPoints.length;
+
+      const meta = METHOD_CONFIGS[m] || METHOD_CONFIGS.PRR;
+
+      return {
+        method: m,
+        meta,
+        minScore,
+        maxScore,
+        peakScore,
+        alertCount,
+        firstOnset,
+        pointsByTime: ptByTime,
+        totalSlices: pts.length,
+      };
+    });
+
+    return {
+      timestamps: sortedTimestamps,
+      rows,
+      methodKeys,
+    };
+  }, [multiTrajectories, trajectory, method]);
 
   // Single-method Chart Coordinates Math
   const singleChartMath = useMemo(() => {
@@ -909,7 +988,7 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
         {/* Configuration Bar */}
         <div className="pt-4 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
-            {/* View Mode Toggle: Single vs Compare All vs Multi Signals */}
+            {/* View Mode Toggle: Single vs Compare All vs Heatmap vs Multi Signals */}
             <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
               <button
                 onClick={() => setViewMode("single")}
@@ -934,6 +1013,17 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
                 <span>Compare All Methods</span>
               </button>
               <button
+                onClick={() => setViewMode("heatmap")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition ${
+                  viewMode === "heatmap"
+                    ? "bg-indigo-600 text-white shadow-sm font-semibold"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <Grid3X3 className="w-3.5 h-3.5 text-rose-400" />
+                <span>Method Heatmap</span>
+              </button>
+              <button
                 onClick={() => setViewMode("multi_signals")}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition ${
                   viewMode === "multi_signals"
@@ -947,7 +1037,7 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
             </div>
 
             {/* Method Select (Active in Single and Multi-Signal Views) */}
-            {viewMode !== "compare" && (
+            {viewMode !== "compare" && viewMode !== "heatmap" && (
               <div className="flex items-center gap-1.5 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800 text-xs">
                 <span className="text-slate-400 font-medium">Method:</span>
                 <select
@@ -1034,14 +1124,14 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
               onClick={() => handleRunLongitudinal("all")}
               disabled={running}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition disabled:opacity-50"
-              title="Compute longitudinal trajectories for all methods (PRR, ROR, BCPNN, GPS, SCORE-DA)"
+              title="Compute longitudinal trajectories for all methods (PRR, ROR, RFET, BCPNN, GPS, SCORE-DA)"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${running ? "animate-spin text-indigo-400" : ""}`} />
               <span>Compute All Methods</span>
             </button>
 
             <button
-              onClick={() => handleRunLongitudinal(viewMode === "compare" ? "all" : method)}
+              onClick={() => handleRunLongitudinal((viewMode === "compare" || viewMode === "heatmap") ? "all" : method)}
               disabled={running}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-md shadow-blue-500/20 disabled:opacity-50 transition active:scale-95"
             >
@@ -1050,7 +1140,7 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
               ) : (
                 <Play className="w-3.5 h-3.5 fill-current" />
               )}
-              <span>{running ? "Modeling..." : `Run ${viewMode === "compare" ? "Multi-Method" : method.toUpperCase()}`}</span>
+              <span>{running ? "Modeling..." : (viewMode === "compare" || viewMode === "heatmap") ? "Run Multi-Method" : `Run ${method.toUpperCase()}`}</span>
             </button>
           </div>
         </div>
@@ -1078,6 +1168,7 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
                     setCustomThreshold("");
                     setRankingStatistic("default");
                     setLassoAlpha(0.01);
+                    setScoreFdr(0.05);
                     setContinuityCorrection(0.5);
                     setRelativeRisk(1.0);
                   }}
@@ -1094,6 +1185,29 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
                   <X className="w-4 h-4" />
                 </button>
               </div>
+            </div>
+
+            {/* Global Inheritance Explanation Banner */}
+            <div className="p-3.5 rounded-xl bg-indigo-950/40 border border-indigo-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5 font-semibold text-indigo-300">
+                  <Sparkles className="w-4 h-4 text-indigo-400" />
+                  <span>Global Method Hyperparameter Inheritance</span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed max-w-2xl">
+                  Method-specific parameters (such as SCORE-DA latent rank & syndromic penalty, BCPNN/GPS prior distributions, RFET mid-p adjustments, and LASSO bootstrap settings) are automatically inherited from the global <strong>Disproportionality Method Configuration</strong>. The controls below configure time-decay dynamics (t½), slice minimums, and direct overrides for time slices.
+                </p>
+              </div>
+              {onOpenConfig && (
+                <button
+                  onClick={onOpenConfig}
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs shadow-sm transition"
+                  title="Open the global Method Configuration modal to adjust prior distributions, regression penalties, and consensus rules"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>Open Global Method Configurations</span>
+                </button>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
@@ -1237,6 +1351,26 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
                 />
                 <p className="text-[10px] text-slate-400">
                   Additive pseudo-count correction applied to 2x2 contingency tables when encountering sparse counts.
+                </p>
+              </div>
+
+              {/* SCORE-DA FDR Significance Threshold */}
+              <div className="space-y-1.5 p-3 rounded-lg bg-slate-900/80 border border-slate-800/80">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-slate-200">SCORE-DA FDR Cutoff (q)</label>
+                  <span className="text-[10px] text-rose-400 font-mono">Default: 0.05</span>
+                </div>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.001"
+                  max="0.25"
+                  value={scoreFdr}
+                  onChange={(e) => setScoreFdr(parseFloat(e.target.value) || 0.05)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-indigo-500 font-mono"
+                />
+                <p className="text-[10px] text-slate-400">
+                  Benjamini-Hochberg FDR threshold determining alerts when evaluating syndromic outlier residuals.
                 </p>
               </div>
             </div>
@@ -1683,6 +1817,20 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
               onMouseMove={handleMouseMove}
               onMouseLeave={() => setHoveredIndex(null)}
             >
+              {/* Y-Axis Rotated Metric Label */}
+              <text
+                transform={`rotate(-90, ${margin.left - 52}, ${margin.top + innerHeight / 2})`}
+                x={margin.left - 52}
+                y={margin.top + innerHeight / 2}
+                fill="#94a3b8"
+                fontSize="11"
+                fontWeight="600"
+                letterSpacing="0.02em"
+                textAnchor="middle"
+              >
+                Normalized Signal Strength (Fold-Change Relative to Threshold, 1.0× = Alert)
+              </text>
+
               {/* Horizontal Normalized Grid Lines */}
               {[0, 0.25, 0.5, 0.75, 1.0].map((pct) => {
                 const yVal = margin.top + pct * innerHeight;
@@ -1859,6 +2007,278 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
               </div>
             )}
           </div>
+        ) : viewMode === "heatmap" ? (
+          /* MULTI-METHOD HEATMAP MATRIX CANVAS */
+          <div className="space-y-4 select-none">
+            {/* Heatmap Control & Legend Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 px-2 py-1 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-white">Method Matrix</span>
+                <span className="text-slate-400">
+                  ({heatmapData.rows.length} method{heatmapData.rows.length !== 1 ? "s" : ""} × {heatmapData.timestamps.length} time slices)
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-mono">
+                  Row-normalized raw signal coloring
+                </span>
+              </div>
+
+              {/* Heatmap Color Scale Legend */}
+              <div className="flex flex-wrap items-center gap-4 text-[11px] text-slate-400">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded bg-slate-800 border border-slate-700" />
+                  <span>Baseline Low</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded bg-slate-700 border border-slate-600" />
+                  <span>Baseline High</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded bg-rose-600/70 border border-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.4)]" />
+                  <span className="text-rose-300 font-medium">Signal Alert Active</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse shadow-sm shadow-rose-400" />
+                  <span>Threshold Exceeded</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Scrollable Heatmap Matrix */}
+            {heatmapData.timestamps.length === 0 ? (
+              <div className="py-20 text-center text-slate-400 text-xs space-y-3 bg-slate-950/40 rounded-xl border border-slate-800">
+                <Grid3X3 className="w-8 h-8 text-slate-600 mx-auto" />
+                <p className="text-sm font-medium text-slate-300">
+                  No Time Slice Data Available for Heatmap
+                </p>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  Click 'Compute All Methods' above to evaluate longitudinal trajectories across time slices for all methods.
+                </p>
+                <button
+                  onClick={() => handleRunLongitudinal("all")}
+                  disabled={running}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow transition"
+                >
+                  {running ? "Modeling..." : "Compute All Methods"}
+                </button>
+              </div>
+            ) : (
+              <div className="w-full overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80 shadow-inner">
+                <table className="w-full border-collapse text-left">
+                  <thead>
+                    <tr className="border-b border-slate-800 bg-slate-900/90 text-xs">
+                      <th className="sticky left-0 z-20 bg-slate-900 px-4 py-3 min-w-[210px] border-r border-slate-800 font-semibold text-slate-200 shadow-sm">
+                        Method & Decision Threshold
+                      </th>
+                      {heatmapData.timestamps.map((ts) => (
+                        <th
+                          key={ts}
+                          className="px-3 py-2.5 text-center min-w-[76px] font-mono text-[11px] text-slate-300 whitespace-nowrap border-r border-slate-800/40"
+                        >
+                          <div className="font-bold text-white">{formatTimestampTick(ts)}</div>
+                          <div className="text-[9px] text-slate-500 font-sans">{ts.split(" ")[0]}</div>
+                        </th>
+                      ))}
+                      <th className="px-3 py-2.5 text-center min-w-[85px] font-semibold text-slate-300 border-r border-slate-800/40">
+                        Alert Slices
+                      </th>
+                      <th className="px-3 py-2.5 text-center min-w-[90px] font-semibold text-slate-300">
+                        Peak Raw
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 text-xs">
+                    {heatmapData.rows.map((row) => (
+                      <tr key={row.method} className="hover:bg-slate-900/40 transition-colors">
+                        {/* Sticky Method Label Header */}
+                        <td className="sticky left-0 z-10 bg-slate-900/95 px-4 py-3 border-r border-slate-800">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="w-2.5 h-2.5 rounded-full shrink-0"
+                              style={{ backgroundColor: row.meta.color }}
+                            />
+                            <span className="font-bold text-white tracking-wide">{row.meta.name}</span>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700/60">
+                              {row.meta.thresholdLabel}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[190px]">
+                            {row.meta.metricLabel}
+                          </div>
+                        </td>
+
+                        {/* Heatmap Time Slices */}
+                        {heatmapData.timestamps.map((ts) => {
+                          const pt = row.pointsByTime.get(ts);
+                          const score = pt?.score;
+                          const isAlert = Boolean(pt?.alert);
+
+                          // Calculate row-based coloring using raw signal value
+                          let bgStyle = "rgba(30, 41, 59, 0.4)";
+                          let borderStyle = "rgba(51, 65, 85, 0.4)";
+                          let textClass = "text-slate-500 font-mono";
+                          let glowStyle = "";
+
+                          if (score !== null && score !== undefined && !isNaN(score)) {
+                            const span = row.maxScore - row.minScore;
+                            const norm = span > 0.0001 ? Math.max(0, Math.min(1, (score - row.minScore) / span)) : 0.5;
+
+                            if (isAlert) {
+                              const alpha = 0.35 + 0.55 * norm;
+                              bgStyle = `rgba(244, 63, 94, ${alpha.toFixed(2)})`;
+                              borderStyle = "rgba(251, 113, 133, 0.8)";
+                              textClass = "text-white font-mono font-bold";
+                              glowStyle = "shadow-[0_0_8px_rgba(244,63,94,0.35)]";
+                            } else {
+                              const alpha = 0.2 + 0.45 * norm;
+                              bgStyle = `rgba(30, 41, 59, ${alpha.toFixed(2)})`;
+                              borderStyle = "rgba(51, 65, 85, 0.5)";
+                              textClass = norm > 0.6 ? "text-slate-200 font-mono font-semibold" : "text-slate-400 font-mono font-medium";
+                            }
+                          }
+
+                          return (
+                            <td
+                              key={ts}
+                              className="p-1 border-r border-slate-800/30 text-center align-middle"
+                            >
+                              <div
+                                style={{ backgroundColor: bgStyle, borderColor: borderStyle }}
+                                onMouseEnter={(e) => {
+                                  if (pt) {
+                                    setHoveredHeatmapCell({
+                                      method: row.method,
+                                      meta: row.meta,
+                                      timestamp: ts,
+                                      pt,
+                                      minScore: row.minScore,
+                                      maxScore: row.maxScore,
+                                    });
+                                  }
+                                }}
+                                onMouseLeave={() => setHoveredHeatmapCell(null)}
+                                className={`relative group rounded-lg p-2 min-h-[50px] flex flex-col items-center justify-center transition-all border cursor-pointer ${glowStyle} hover:scale-[1.04] hover:z-20 hover:border-white/80`}
+                              >
+                                {/* Alert Indicator Dot */}
+                                {isAlert && (
+                                  <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-rose-400 shadow-sm shadow-rose-400 animate-pulse" />
+                                )}
+
+                                {/* Raw Score Text */}
+                                <span className={`text-xs ${textClass}`}>
+                                  {score !== null && score !== undefined
+                                    ? score >= 100
+                                      ? score.toFixed(1)
+                                      : score >= 1
+                                      ? score.toFixed(2)
+                                      : score.toFixed(3)
+                                    : "—"}
+                                </span>
+
+                                {/* Incident Report Count Subscript */}
+                                {pt?.count !== undefined && pt?.count !== null && (
+                                  <span className="text-[9px] font-mono text-slate-400 mt-0.5">
+                                    N={pt.count}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          );
+                        })}
+
+                        {/* Alert Slices Count Badge */}
+                        <td className="px-3 py-3 text-center border-r border-slate-800/40">
+                          <span
+                            className={`inline-block font-mono text-xs font-semibold px-2 py-0.5 rounded-full border ${
+                              row.alertCount > 0
+                                ? "bg-rose-500/10 text-rose-300 border-rose-500/30"
+                                : "bg-slate-800 text-slate-400 border-slate-700"
+                            }`}
+                          >
+                            {row.alertCount} / {row.totalSlices}
+                          </span>
+                        </td>
+
+                        {/* Peak Raw Score */}
+                        <td className="px-3 py-3 text-center font-mono text-xs font-semibold text-slate-200">
+                          {row.peakScore !== null && row.peakScore !== undefined
+                            ? row.peakScore >= 100
+                              ? row.peakScore.toFixed(1)
+                              : row.peakScore >= 1
+                              ? row.peakScore.toFixed(2)
+                              : row.peakScore.toFixed(3)
+                            : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Hover Tooltip Card for Heatmap Cell */}
+            {hoveredHeatmapCell && (
+              <div className="p-3.5 rounded-xl bg-slate-950/95 border border-indigo-500/40 shadow-2xl flex flex-wrap items-center justify-between gap-4 text-xs animate-in fade-in duration-100">
+                <div className="flex items-center gap-2.5">
+                  <span
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: hoveredHeatmapCell.meta.color }}
+                  />
+                  <div>
+                    <span className="font-bold text-white mr-1.5">{hoveredHeatmapCell.meta.name}</span>
+                    <span className="text-slate-400 font-mono text-[11px]">
+                      ({hoveredHeatmapCell.meta.metricLabel})
+                    </span>
+                    <div className="text-[10px] text-slate-400 font-mono">
+                      Slice: {formatTimestampTick(hoveredHeatmapCell.timestamp)} ({hoveredHeatmapCell.timestamp.split(" ")[0]})
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-5 font-mono text-xs">
+                  <div>
+                    <span className="text-slate-400 mr-1 font-sans">Raw Score:</span>
+                    <strong className="text-white">
+                      {hoveredHeatmapCell.pt.score !== null && hoveredHeatmapCell.pt.score !== undefined
+                        ? hoveredHeatmapCell.pt.score.toFixed(3)
+                        : "—"}
+                    </strong>
+                  </div>
+
+                  {(hoveredHeatmapCell.pt.ci_lower !== null || hoveredHeatmapCell.pt.ci_upper !== null) && (
+                    <div>
+                      <span className="text-slate-400 mr-1 font-sans">95% Interval:</span>
+                      <span className="text-slate-300">
+                        [{hoveredHeatmapCell.pt.ci_lower?.toFixed(2) ?? "—"},{" "}
+                        {hoveredHeatmapCell.pt.ci_upper?.toFixed(2) ?? "—"}]
+                      </span>
+                    </div>
+                  )}
+
+                  {hoveredHeatmapCell.pt.count !== null && hoveredHeatmapCell.pt.count !== undefined && (
+                    <div>
+                      <span className="text-slate-400 mr-1 font-sans">Count:</span>
+                      <span className="text-blue-400 font-semibold">{hoveredHeatmapCell.pt.count}</span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-400 font-sans">Alert Status:</span>
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                        hoveredHeatmapCell.pt.alert
+                          ? "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
+                          : "bg-slate-800 text-slate-400 border-slate-700"
+                      }`}
+                    >
+                      {hoveredHeatmapCell.pt.alert
+                        ? `ALERT ACTIVE (${hoveredHeatmapCell.meta.thresholdLabel})`
+                        : `Below Threshold (${hoveredHeatmapCell.meta.thresholdLabel})`}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         ) : (
           /* SINGLE METHOD SVG CANVAS */
           <div className="relative w-full overflow-hidden select-none">
@@ -1885,6 +2305,22 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
                   <feComposite in="SourceGraphic" in2="blur" operator="over" />
                 </filter>
               </defs>
+
+              {/* Y-Axis Rotated Metric Label */}
+              <text
+                transform={`rotate(-90, ${margin.left - 52}, ${margin.top + innerHeight / 2})`}
+                x={margin.left - 52}
+                y={margin.top + innerHeight / 2}
+                fill="#94a3b8"
+                fontSize="11"
+                fontWeight="600"
+                letterSpacing="0.02em"
+                textAnchor="middle"
+              >
+                {METHOD_CONFIGS[method.toUpperCase()]?.metricLabel
+                  ? `${method.toUpperCase()} — ${METHOD_CONFIGS[method.toUpperCase()].metricLabel}`
+                  : `${method.toUpperCase()} Metric Score`}
+              </text>
 
               {/* Horizontal Grid Lines */}
               {[0, 0.25, 0.5, 0.75, 1.0].map((pct) => {

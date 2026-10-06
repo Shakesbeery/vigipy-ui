@@ -617,7 +617,7 @@ def execute_longitudinal(
 
     methods_to_run: List[str] = []
     if req.method == "all":
-        methods_to_run = ["prr", "ror", "bcpnn", "gps", "score_da"]
+        methods_to_run = ["prr", "ror", "rfet", "bcpnn", "gps", "score_da"]
     elif req.methods:
         methods_to_run = [m.lower() for m in req.methods if m.lower() in method_funcs]
     else:
@@ -641,6 +641,16 @@ def execute_longitudinal(
             else None
         )
         extra_kwargs: Dict[str, Any] = {}
+
+        # 1. Inherit method-specific hyperparameters from global run if available
+        if state.consensus_result and state.consensus_result.raw_results:
+            raw_res = state.consensus_result.raw_results.get(m) or state.consensus_result.raw_results.get(m.upper())
+            if raw_res and hasattr(raw_res, "params") and isinstance(raw_res.params, dict):
+                for k, v in raw_res.params.items():
+                    if k not in ("container", "min_events", "decay_half_life"):
+                        extra_kwargs[k] = v
+
+        # 2. Apply longitudinal-specific overrides
         if m == "lasso":
             extra_kwargs["num_bootstrap"] = 0
             extra_kwargs["use_bootstrap"] = False
@@ -667,6 +677,9 @@ def execute_longitudinal(
                 extra_kwargs["ranking_statistic"] = req.ranking_statistic
             if req.relative_risk is not None:
                 extra_kwargs["relative_risk"] = req.relative_risk
+        elif m == "rfet":
+            if req.decision_thres is not None:
+                extra_kwargs["decision_thres"] = req.decision_thres
 
         if req.mode == "cumulative":
             lm.run(
