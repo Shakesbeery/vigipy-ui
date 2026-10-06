@@ -410,6 +410,10 @@ def _get_method_threshold_str(method_name: str, res_or_params: Any = None) -> tu
         l_thresh = input_params.get("lasso_thresh", 0.0)
         return f"Beta > {l_thresh}", "Beta"
 
+    elif m_low in ("score_da", "score"):
+        fdr = input_params.get("fdr_threshold", 0.05)
+        return f"FDR ≤ {fdr}", "FDR"
+
     return "Pass Threshold", "Score"
 
 
@@ -489,7 +493,7 @@ def inspect_signal_detail(payload: Dict[str, Any]) -> InspectSignalResponse:
             if not match.empty:
                 r = match.iloc[0]
                 score_col = None
-                for col in ["Score", "PRR", "ROR", "RFET", "IC", "quantile", "EBGM", m_name.upper()]:
+                for col in ["Score", "PRR", "ROR", "RFET", "IC", "quantile", "EBGM", "LASSO Coefficient", "Beta", "SER", "SRR", m_name.upper()]:
                     if col in r and not pd.isna(r[col]):
                         score_col = col
                         break

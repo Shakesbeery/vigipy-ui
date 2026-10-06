@@ -40,6 +40,7 @@ export function generateVigipyPythonCode(params: CodeGenParams): string {
   const bcpnn = config.bcpnn || { enabled: true, decision_metric: 'rank', decision_thres: 0.0, min_events: 3, ranking_statistic: 'quantile' };
   const gps = config.gps || { enabled: true, decision_metric: 'rank', decision_thres: 0.05, min_events: 3, ranking_statistic: 'log2' };
   const lasso = config.lasso || { enabled: false, lasso_thresh: 0.0, alpha: 0.5, min_events: 3, num_bootstrap: 10, relaxed: true };
+  const scoreDa = config.score_da || { enabled: false, latent_rank: 5, syndromic_weight: 1.0, sparsity_param: 0.1 };
 
   return `"""
 Pharmacovigilance Disproportionality & Surveillance Pipeline
@@ -63,6 +64,7 @@ from vigipy import (
     BCPNNConfig,
     GPSConfig,
     LASSOConfig,
+    SCOREConfig,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -146,6 +148,14 @@ ${lasso.enabled ? `configs.append(
         relaxed=${lasso.relaxed !== false ? 'True' : 'False'},
     )
 )` : '# LASSO disabled'}
+ 
+${scoreDa.enabled ? `configs.append(
+    SCOREConfig(
+        latent_rank=${scoreDa.latent_rank || 5},
+        syndromic_weight=${scoreDa.syndromic_weight || 1.0},
+        sparsity_param=${scoreDa.sparsity_param || 0.1},
+    )
+)` : '# SCORE-DA disabled'}
 
 # ---------------------------------------------------------
 # 3. DISPROPORTIONALITY ANALYSIS EXECUTION

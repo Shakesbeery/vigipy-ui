@@ -591,14 +591,14 @@ export const SignalGrid: React.FC<SignalGridProps> = ({
                     <td className="py-3 px-3 text-center">
                       <span
                         className={`inline-flex items-center justify-center font-mono text-xs px-2 py-0.5 rounded font-semibold ${
-                          row.votes >= 4
+                          (row.votes / (row.total_methods || data.methods?.length || 1)) >= 0.6
                             ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                            : row.votes >= 2
+                            : (row.votes / (row.total_methods || data.methods?.length || 1)) >= 0.3
                             ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
                             : "bg-slate-800 text-slate-400 border border-slate-700"
                         }`}
                       >
-                        {row.votes} / {row.total_methods || 6}
+                        {row.votes} / {row.total_methods || data.methods?.length || 1}
                       </span>
                     </td>
 

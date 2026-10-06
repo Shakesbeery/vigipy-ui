@@ -129,6 +129,14 @@ const METHOD_CONFIGS: Record<string, MethodMeta> = {
     metricLabel: "Standardized Outlier Residual",
     normalize: (score) => (score !== null && score !== undefined ? Math.max(0, score + 1.0) : null),
   },
+  SCORE: {
+    name: "SCORE-DA",
+    color: "#f43f5e", // Rose
+    threshold: 0.0,
+    thresholdLabel: "SER > 0.0",
+    metricLabel: "Standardized Outlier Residual",
+    normalize: (score) => (score !== null && score !== undefined ? Math.max(0, score + 1.0) : null),
+  },
 };
 
 function formatTimestampTick(ts: string): string {
@@ -158,10 +166,12 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
   const [visibleMethods, setVisibleMethods] = useState<Record<string, boolean>>({
     PRR: true,
     ROR: true,
+    RFET: true,
     BCPNN: true,
     GPS: true,
     LASSO: true,
     SCORE_DA: true,
+    SCORE: true,
   });
 
   // Dynamic Candidate Signals from Longitudinal Time Slices
@@ -326,11 +336,19 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
       if (res.computed_methods) {
         setComputedMethods(res.computed_methods);
       }
+      const isSameMethod = (m1: string, m2: string) => {
+        const norm1 = m1.toLowerCase().replace(/[-_]/g, "");
+        const norm2 = m2.toLowerCase().replace(/[-_]/g, "");
+        if (norm1 === norm2) return true;
+        if ((norm1 === "score" || norm1 === "scoreda") && (norm2 === "score" || norm2 === "scoreda")) return true;
+        return false;
+      };
+
       // If method is not computed or trajectory is empty, do not display stale data
       if (
         !res.trajectory ||
         res.trajectory.length === 0 ||
-        (res.method && res.method.toLowerCase() !== m.toLowerCase() && m !== "all")
+        (res.method && !isSameMethod(res.method, m) && m !== "all")
       ) {
         setTrajectoryData(null);
         setTrajectoryError(`${m.toUpperCase()} longitudinal model has not been computed yet.`);

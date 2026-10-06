@@ -28,7 +28,7 @@ interface ConcordanceExplorerProps {
   concordanceData?: ConcordanceResponse | null;
 }
 
-const METHODS_LIST = ["PRR", "ROR", "RFET", "BCPNN", "GPS", "LASSO"];
+const METHODS_LIST = ["PRR", "ROR", "RFET", "BCPNN", "GPS", "LASSO", "SCORE"];
 
 const METHOD_LABELS: Record<string, { name: string; full: string; type: string }> = {
   PRR: { name: "PRR", full: "Proportional Reporting Ratio", type: "Frequentist Rate Ratio" },
@@ -37,6 +37,8 @@ const METHOD_LABELS: Record<string, { name: string; full: string; type: string }
   BCPNN: { name: "BCPNN", full: "Bayesian Confidence Propagation Neural Network", type: "Empirical Bayes (IC)" },
   GPS: { name: "GPS", full: "Gamma Poisson Shrinker", type: "Empirical Bayes (EBGM)" },
   LASSO: { name: "LASSO", full: "L1-Penalized Multi-Variable Regression", type: "High-Dimensional GLM" },
+  SCORE: { name: "SCORE", full: "Syndromic Confounding & Overdispersion Removal", type: "Low-Rank Regularized Deconvolution" },
+  SCORE_DA: { name: "SCORE_DA", full: "Syndromic Confounding & Overdispersion Removal", type: "Low-Rank Regularized Deconvolution" },
 };
 
 export const ConcordanceExplorer: React.FC<ConcordanceExplorerProps> = ({
@@ -461,7 +463,7 @@ export const ConcordanceExplorer: React.FC<ConcordanceExplorerProps> = ({
             )}
 
             <div className="text-[11px] text-slate-500 font-mono">
-              N = 6 Disproportionality Methods
+              N = {methods.length} Disproportionality Methods
             </div>
           </div>
         </div>

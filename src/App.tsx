@@ -122,8 +122,8 @@ export const App: React.FC = () => {
     const loadVersion = async () => {
       try {
         const v = await fetchVigipyVersion();
-        if (v?.vigipy_version) {
-          setVigipyVersion(v.vigipy_version);
+        if (v?.installed_version) {
+          setVigipyVersion(v.installed_version);
         }
       } catch {
         // Ignore fallback
@@ -507,7 +507,7 @@ export const App: React.FC = () => {
                       Dataset Loaded: {dataSummary.total_raw_rows.toLocaleString()} rows ({dataSummary.unique_pairs.toLocaleString()} candidate pairs)
                     </span>
                     <span className="text-[11px] text-slate-400 ml-2">
-                      Analyses have not been run automatically. Choose which methods (PRR, ROR, RFET, BCPNN, GPS, LASSO) to execute.
+                      Analyses have not been run automatically. Choose which methods (PRR, ROR, RFET, BCPNN, GPS, LASSO, SCORE) to execute.
                     </span>
                   </div>
                 </div>

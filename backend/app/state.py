@@ -140,9 +140,14 @@ class AppState:
         if methods:
             method_mask = np.zeros(total_records, dtype=bool)
             for m in methods:
-                col = f"alert_{m.lower()}"
-                if col in df.columns:
-                    method_mask |= df[col].fillna(False).to_numpy()
+                m_low = m.lower().strip()
+                cands = [f"alert_{m_low}", f"alert_{m.upper().strip()}"]
+                if m_low in ("score", "score_da"):
+                    cands += ["alert_score", "alert_score_da"]
+                for c in cands:
+                    if c in df.columns:
+                        method_mask |= df[c].fillna(False).to_numpy()
+                        break
             mask &= method_mask
 
         filtered_count = int(np.sum(mask))
@@ -153,7 +158,12 @@ class AppState:
 
         # 2. Vectorized Sorting
         ascending = sort_dir.lower() == "asc"
-        valid_sort_col = sort_by if sort_by in filtered_df.columns else None
+        valid_sort_col = None
+
+        if sort_by:
+            # Case-insensitive resolution against available columns
+            col_map = {c.lower(): c for c in filtered_df.columns}
+            valid_sort_col = col_map.get(sort_by.lower().strip())
 
         if not valid_sort_col:
             for fallback in ["composite_rank", "consensus_score", "votes", "Count", "Product"]:
@@ -162,13 +172,23 @@ class AppState:
                     break
 
         if valid_sort_col:
-            # Handle NaN positioning: place NaNs at the end
-            filtered_df = filtered_df.sort_values(
-                by=valid_sort_col,
-                ascending=ascending,
-                na_position="last",
-                kind="quicksort",
-            )
+            # Handle clinical consensus tier semantic sorting
+            if valid_sort_col.lower() == "agreement_tier":
+                tier_order = {"unanimous": 5, "strong": 4, "moderate": 3, "weak": 2, "isolated": 1}
+                temp_tier_series = filtered_df[valid_sort_col].astype(str).str.lower().map(tier_order).fillna(0)
+                filtered_df = filtered_df.assign(_tier_rank=temp_tier_series).sort_values(
+                    by="_tier_rank",
+                    ascending=ascending,
+                    na_position="last",
+                    kind="quicksort",
+                ).drop(columns=["_tier_rank"])
+            else:
+                filtered_df = filtered_df.sort_values(
+                    by=valid_sort_col,
+                    ascending=ascending,
+                    na_position="last",
+                    kind="quicksort",
+                )
 
         # 3. Slicing active viewport window
         slice_df = filtered_df.iloc[offset : offset + limit]
@@ -186,28 +206,44 @@ class AppState:
             tier = str(row.get("agreement_tier", "Isolated"))
             comp_rank = float(row.get("composite_rank", np.nan)) if "composite_rank" in row else None
 
-            # Collect per-method scores and alerts (checking both upper and lowercase columns)
+            # Collect per-method scores and alerts (checking both upper and lowercase columns and aliases)
             m_scores: Dict[str, Optional[float]] = {}
             m_alerts: Dict[str, bool] = {}
             for m in self._methods_list:
                 m_up = m.upper()
                 m_low = m.lower()
-                s_col_low = f"score_{m_low}"
-                s_col_up = f"score_{m_up}"
-                val = None
-                if s_col_low in row and not pd.isna(row[s_col_low]):
-                    val = float(row[s_col_low])
-                elif s_col_up in row and not pd.isna(row[s_col_up]):
-                    val = float(row[s_col_up])
+                is_score = m_low in ("score", "score_da")
 
-                a_col_low = f"alert_{m_low}"
-                a_col_up = f"alert_{m_up}"
-                alert_val = bool(row.get(a_col_low, row.get(a_col_up, False)))
+                s_cands = [f"score_{m_low}", f"score_{m_up}"] + ([f"score_score", f"score_score_da", "SER", "SRR"] if is_score else [])
+                a_cands = [f"alert_{m_low}", f"alert_{m_up}"] + ([f"alert_score", f"alert_score_da"] if is_score else [])
+
+                val = None
+                for c in s_cands:
+                    if c in row and not pd.isna(row[c]):
+                        val = float(row[c])
+                        break
+
+                alert_val = False
+                for c in a_cands:
+                    if c in row and bool(row[c]):
+                        alert_val = True
+                        break
 
                 m_scores[m_up] = val
                 m_scores[m_low] = val
                 m_alerts[m_up] = alert_val
                 m_alerts[m_low] = alert_val
+
+                # Cross-populate SCORE / SCORE_DA aliases
+                if is_score:
+                    m_scores["SCORE"] = val
+                    m_scores["score"] = val
+                    m_scores["SCORE_DA"] = val
+                    m_scores["score_da"] = val
+                    m_alerts["SCORE"] = alert_val
+                    m_alerts["score"] = alert_val
+                    m_alerts["SCORE_DA"] = alert_val
+                    m_alerts["score_da"] = alert_val
 
             rows.append(
                 {

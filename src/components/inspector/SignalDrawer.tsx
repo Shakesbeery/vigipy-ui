@@ -53,6 +53,8 @@ const METHOD_DESCRIPTIONS: Record<string, string> = {
   BCPNN: "Bayesian Confidence Propagation Neural Network (Bate et al., 1998) - Information Component (IC) with Dirichlet/Beta prior.",
   GPS: "Gamma Poisson Shrinker (DuMouchel, 1999) - Empirical Bayes Geometric Mean (EBGM) and 5th percentile lower bound (EB05).",
   LASSO: "L1-Penalized Multi-Variable Regression - High-dimensional confounding and masking control via relaxed penalized GLM.",
+  SCORE_DA: "Syndromic Confounding & Overdispersion Removal - Low-rank matrix factorization and graph Laplacian regularized residuals.",
+  SCORE: "Syndromic Confounding & Overdispersion Removal - Low-rank matrix factorization and graph Laplacian regularized residuals.",
 };
 
 export const SignalDrawer: React.FC<SignalDrawerProps> = ({
@@ -117,7 +119,7 @@ export const SignalDrawer: React.FC<SignalDrawerProps> = ({
   const currentProduct = inspection?.product || selectedSignal.product;
   const currentAE = inspection?.adverse_event || selectedSignal.adverse_event;
   const currentVotes = inspection?.votes ?? selectedSignal.votes ?? 0;
-  const currentTotalMethods = inspection?.total_methods ?? selectedSignal.total_methods ?? 6;
+  const currentTotalMethods = inspection?.total_methods ?? selectedSignal.total_methods ?? inspection?.methods?.length ?? 6;
   const currentScore = inspection?.consensus_score ?? selectedSignal.consensus_score ?? 0;
   const currentTier = inspection?.agreement_tier ?? selectedSignal.agreement_tier ?? "Isolated";
   const currentRank = inspection?.composite_rank ?? selectedSignal.composite_rank;

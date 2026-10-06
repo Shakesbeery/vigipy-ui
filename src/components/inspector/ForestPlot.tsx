@@ -16,6 +16,8 @@ interface PlotItem {
   ciLower: number;
   ciUpper: number;
   alert: boolean;
+  threshold?: string;
+  thresholdMetric?: string;
   pValue?: number | null;
   fdr?: number | null;
   displayScore: string;
@@ -55,6 +57,8 @@ export const ForestPlot: React.FC<ForestPlotProps> = ({
           ciLower: lower,
           ciUpper: upper,
           alert: m.alert,
+          threshold: m.threshold,
+          thresholdMetric: m.threshold_metric,
           pValue: m.p_value,
           fdr: m.fdr,
           displayScore: score >= 100 ? score.toFixed(1) : score >= 1 ? score.toFixed(2) : score.toFixed(3),
@@ -493,6 +497,12 @@ export const ForestPlot: React.FC<ForestPlotProps> = ({
               <span className="text-slate-400 mr-1">95% CI:</span>
               <span className="text-slate-200">{hoveredMethod.displayCi}</span>
             </div>
+            {hoveredMethod.threshold && (
+              <div>
+                <span className="text-slate-400 mr-1">Threshold:</span>
+                <span className="text-amber-300 font-semibold">{hoveredMethod.threshold}</span>
+              </div>
+            )}
             {hoveredMethod.pValue !== null && hoveredMethod.pValue !== undefined && (
               <div>
                 <span className="text-slate-400 mr-1">p:</span>

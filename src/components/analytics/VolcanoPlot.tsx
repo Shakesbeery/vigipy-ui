@@ -234,7 +234,7 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
         <div className="flex items-center gap-2 flex-wrap">
           {/* Method Selector */}
           <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800">
-            {["PRR", "ROR", "BCPNN", "GPS", "LASSO", "SCORE"].map((m) => (
+            {["PRR", "ROR", "RFET", "BCPNN", "GPS", "LASSO", "SCORE"].map((m) => (
               <button
                 key={m}
                 onClick={() => setSelectedMethod(m)}
@@ -454,7 +454,7 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
               fontWeight="600"
               textAnchor="middle"
             >
-              Effect Size ({selectedMethod === "BCPNN" ? "Information Component IC" : selectedMethod === "LASSO" ? "Beta Coefficient" : "log₂ Ratio"})
+              Effect Size ({selectedMethod === "BCPNN" ? "Information Component IC" : selectedMethod === "LASSO" ? "Beta Coefficient" : selectedMethod === "SCORE" ? "Residual SER" : "log₂ Ratio"})
             </text>
             <text
               transform={`rotate(-90 ${padding.left - 45} ${padding.top + innerHeight / 2})`}

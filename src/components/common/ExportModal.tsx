@@ -83,8 +83,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       "Composite Rank",
     ];
 
+    const exportMethods = ["PRR", "ROR", "RFET", "BCPNN", "GPS", "LASSO", "SCORE_DA"];
+
     if (includeMethodScores) {
-      ["PRR", "ROR", "RFET", "BCPNN", "GPS", "LASSO"].forEach((m) => {
+      exportMethods.forEach((m) => {
         headers.push(`${m}_Score`);
         headers.push(`${m}_Alert`);
       });
@@ -107,9 +109,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       ];
 
       if (includeMethodScores) {
-        ["PRR", "ROR", "RFET", "BCPNN", "GPS", "LASSO"].forEach((m) => {
-          line.push(r.method_scores?.[m] ?? "");
-          line.push(r.method_alerts?.[m] ? "TRUE" : "FALSE");
+        exportMethods.forEach((m) => {
+          const score =
+            r.method_scores?.[m] ??
+            (m === "SCORE_DA" ? r.method_scores?.["SCORE"] ?? r.method_scores?.["score_da"] : undefined) ??
+            "";
+          const alert =
+            r.method_alerts?.[m] ??
+            (m === "SCORE_DA" ? r.method_alerts?.["SCORE"] ?? r.method_alerts?.["score_da"] : undefined);
+          line.push(score);
+          line.push(alert ? "TRUE" : "FALSE");
         });
       }
 

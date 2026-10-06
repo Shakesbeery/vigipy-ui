@@ -258,9 +258,9 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
             <button
               onClick={() => applyPreset("all")}
               className="px-2.5 py-1 rounded-md text-xs font-mono bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
-              title="All 6 methods including bootstrap LASSO"
+              title="All 7 methods including LASSO and SCORE-DA"
             >
-              All 6 Methods
+              All 7 Methods
             </button>
           </div>
 
