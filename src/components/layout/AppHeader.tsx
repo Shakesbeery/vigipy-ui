@@ -13,6 +13,7 @@ import {
   Globe,
   Archive,
   Package,
+  HardDrive,
 } from "lucide-react";
 import { DataSummaryResponse } from "../../types";
 
@@ -26,6 +27,7 @@ interface AppHeaderProps {
   onOpenColumns?: () => void;
   onOpenQualityProfiler?: () => void;
   onOpenOpenFDA?: () => void;
+  onOpenFaersWarehouse?: () => void;
   onOpenCodeViewer?: () => void;
   onOpenAuditDossier?: () => void;
   onOpenVersionModal?: () => void;
@@ -45,6 +47,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onOpenColumns,
   onOpenQualityProfiler,
   onOpenOpenFDA,
+  onOpenFaersWarehouse,
   onOpenCodeViewer,
   onOpenAuditDossier,
   onOpenVersionModal,
@@ -109,6 +112,17 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             {backendOnline ? "Engine Online" : "Offline"}
           </span>
         </div>
+
+        {onOpenFaersWarehouse && (
+          <button
+            onClick={onOpenFaersWarehouse}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-teal-600/40 transition"
+            title="Local FAERS warehouse (2012→present): export drug-family / indication cohorts"
+          >
+            <HardDrive className="w-3.5 h-3.5 text-teal-400" />
+            <span className="hidden lg:inline">FAERS Warehouse</span>
+          </button>
+        )}
 
         {summary ? (
           <>

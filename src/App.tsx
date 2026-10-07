@@ -11,6 +11,7 @@ import { LongitudinalViewer } from "./components/longitudinal/LongitudinalViewer
 import { VolcanoPlot } from "./components/analytics/VolcanoPlot";
 import { DdiNetworkGraph } from "./components/analytics/DdiNetworkGraph";
 import { OpenFDAModal } from "./components/ingestion/OpenFDAModal";
+import { FaersWarehouseModal } from "./components/ingestion/FaersWarehouseModal";
 import { DataQualityProfilerModal } from "./components/modals/DataQualityProfilerModal";
 import { ExportAuditModal } from "./components/modals/ExportAuditModal";
 import { VersionManagerModal } from "./components/modals/VersionManagerModal";
@@ -86,6 +87,7 @@ export const App: React.FC = () => {
   const [isRemappingColumns, setIsRemappingColumns] = useState<boolean>(false);
   const [isQualityModalOpen, setIsQualityModalOpen] = useState<boolean>(false);
   const [isOpenFDAModalOpen, setIsOpenFDAModalOpen] = useState<boolean>(false);
+  const [isWarehouseOpen, setIsWarehouseOpen] = useState<boolean>(false);
   const [isCodeViewerOpen, setIsCodeViewerOpen] = useState<boolean>(false);
   const [isAuditDossierOpen, setIsAuditDossierOpen] = useState<boolean>(false);
   const [isVersionModalOpen, setIsVersionModalOpen] = useState<boolean>(false);
@@ -332,6 +334,7 @@ export const App: React.FC = () => {
         onOpenColumns={handleOpenColumns}
         onOpenQualityProfiler={() => setIsQualityModalOpen(true)}
         onOpenOpenFDA={() => setIsOpenFDAModalOpen(true)}
+        onOpenFaersWarehouse={() => setIsWarehouseOpen(true)}
         onOpenCodeViewer={() => setIsCodeViewerOpen(true)}
         onOpenAuditDossier={() => setIsAuditDossierOpen(true)}
         onOpenVersionModal={() => setIsVersionModalOpen(true)}
@@ -653,6 +656,16 @@ export const App: React.FC = () => {
         onClose={() => setIsOpenFDAModalOpen(false)}
         onDataIngested={(filePath) => {
           setIsOpenFDAModalOpen(false);
+          handleFileSelect(filePath);
+        }}
+      />
+
+      {/* Local FAERS Warehouse (bulk 2012+ cohorts) */}
+      <FaersWarehouseModal
+        isOpen={isWarehouseOpen}
+        onClose={() => setIsWarehouseOpen(false)}
+        onDataIngested={(filePath) => {
+          setIsWarehouseOpen(false);
           handleFileSelect(filePath);
         }}
       />

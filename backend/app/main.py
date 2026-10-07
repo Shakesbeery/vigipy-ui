@@ -755,6 +755,116 @@ def export_file(req: ExportRequest) -> Dict[str, str]:
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+# --- Local FAERS Warehouse Endpoints ---
+
+from .. import faers as _faers_pkg  # noqa: E402
+from ..faers import export as faers_export  # noqa: E402
+
+warehouse_job: Dict[str, Any] = {"status": "idle", "step": "", "error": None, "result": None}
+_warehouse_proc: Dict[str, Any] = {"proc": None}
+
+
+@app.get("/api/faers/status")
+def faers_status() -> Dict[str, Any]:
+    st = faers_export.warehouse_status(_faers_pkg.DEFAULT_ROOT)
+    proc = _warehouse_proc.get("proc")
+    st["pipeline_running"] = bool(proc is not None and proc.poll() is None)
+    st["job"] = warehouse_job
+    return st
+
+
+@app.post("/api/faers/build")
+def faers_build() -> Dict[str, Any]:
+    """Run download -> load -> finalize in a detached subprocess (survives UI reloads)."""
+    import subprocess
+    import sys
+
+    proc = _warehouse_proc.get("proc")
+    if proc is not None and proc.poll() is None:
+        return {"status": "already_running"}
+    root = _faers_pkg.DEFAULT_ROOT
+    os.makedirs(root, exist_ok=True)
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    code = ("from backend.faers.downloader import download_all; from backend.faers.loader import build; "
+            f"download_all(r'{root}'); build(r'{root}')")
+    log = open(os.path.join(root, "pipeline.log"), "a", encoding="utf-8")
+    _warehouse_proc["proc"] = subprocess.Popen([sys.executable, "-u", "-c", code], cwd=repo_root,
+                                               stdout=log, stderr=subprocess.STDOUT)
+    return {"status": "started", "root": root}
+
+
+def _require_ready() -> None:
+    st = faers_export.warehouse_status(_faers_pkg.DEFAULT_ROOT)
+    if not st.get("ready"):
+        raise HTTPException(status_code=409, detail="FAERS warehouse not built yet. Run the build first.")
+
+
+@app.get("/api/faers/catalog")
+def faers_catalog() -> Dict[str, Any]:
+    _require_ready()
+    return faers_export.catalog(_faers_pkg.DEFAULT_ROOT)
+
+
+@app.get("/api/faers/search")
+def faers_search(kind: str = Query("drug"), q: str = Query(...), limit: int = Query(50)) -> Dict[str, Any]:
+    _require_ready()
+    fn = faers_export.search_drugs if kind == "drug" else faers_export.search_indications
+    return {"results": fn(q, limit, _faers_pkg.DEFAULT_ROOT)}
+
+
+@app.post("/api/faers/preview")
+def faers_preview(spec: Dict[str, Any]) -> Dict[str, Any]:
+    _require_ready()
+    try:
+        return faers_export.preview(spec, _faers_pkg.DEFAULT_ROOT)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+def _export_worker(kind: str, payload: Dict[str, Any]) -> None:
+    global warehouse_job
+    try:
+        root = _faers_pkg.DEFAULT_ROOT
+        if kind == "single":
+            res = faers_export.export_cohort(
+                payload["spec"], payload["dest_path"], root,
+                progress_cb=lambda n: warehouse_job.update(step=f"Wrote {n:,} rows..."))
+            if payload.get("load_into_app"):
+                warehouse_job["step"] = "Loading cohort into analysis workspace..."
+                mapping = ColumnMappingRequest(
+                    file_path=res["file_path"], product_col="drugName", ae_col="preferredTerm",
+                    count_col=None, date_col="date", auto_populate_count=True, default_count=1)
+                ingest_data_file(mapping)
+                res["loaded_into_app"] = True
+        else:
+            res = faers_export.export_batch(
+                payload["group_by"], payload["dest_dir"], payload.get("spec"), payload.get("format", "csv"),
+                int(payload.get("min_cases", 500)), root,
+                progress_cb=lambda g, i, n: warehouse_job.update(step=f"[{i}/{n}] Exporting {g}..."))
+        warehouse_job.update(status="completed", step="Export finished.", result=res)
+    except Exception as exc:
+        logger.error(f"FAERS export failed: {exc}", exc_info=True)
+        warehouse_job.update(status="failed", error=str(exc), step="Export failed.")
+
+
+@app.post("/api/faers/export")
+def faers_export_endpoint(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """payload: {mode: 'single'|'batch', spec, dest_path | dest_dir, group_by, format, load_into_app}"""
+    global warehouse_job
+    _require_ready()
+    if warehouse_job.get("status") == "running":
+        raise HTTPException(status_code=409, detail="Another FAERS export is already running.")
+    mode = payload.get("mode", "single")
+    exports_dir = os.path.join(_faers_pkg.DEFAULT_ROOT, "exports")
+    if mode == "single" and not payload.get("dest_path"):
+        payload["dest_path"] = os.path.join(exports_dir, f"cohort_{uuid.uuid4().hex[:6]}.csv")
+    if mode == "batch" and not payload.get("dest_dir"):
+        payload["dest_dir"] = os.path.join(exports_dir, f"batch_{payload.get('group_by', 'group')}")
+    warehouse_job = {"status": "running", "step": "Starting export...", "error": None, "result": None}
+    threading.Thread(target=_export_worker, args=(mode, payload), daemon=True).start()
+    return warehouse_job
+
+
 # --- Static Frontend Serving ---
 _dist_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "dist"))
 if os.path.exists(_dist_dir):
