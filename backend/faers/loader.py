@@ -71,14 +71,14 @@ def init_schema(con: sqlite3.Connection) -> None:
 def _read_member(z: zipfile.ZipFile, prefix: str) -> Optional[pd.DataFrame]:
     """Read the $-delimited table whose basename starts with prefix (demo/drug/reac/indi/outc)."""
     names = [n for n in z.namelist()
-             if re.match(rf"^{prefix}\d\dq\d\.txt$", os.path.basename(n).lower())]
+             if re.match(rf"^{prefix}\d\dq\d(_new)?\.txt$", os.path.basename(n).lower())]
     if not names:
         return None
     with z.open(names[0]) as fh:
         raw = fh.read().decode("latin-1")
     df = pd.read_csv(io.StringIO(raw), sep="$", dtype=str, quoting=csv.QUOTE_NONE,
                      on_bad_lines="skip", index_col=False, keep_default_na=False, na_values=[""])
-    df.columns = [c.strip().lower() for c in df.columns]
+    df.columns = [re.sub(r"^[^a-z0-9_]+", "", c.strip().lower()) for c in df.columns]
     df = df.loc[:, [c for c in df.columns if c and not c.startswith("unnamed")]]
     return df.rename(columns=RENAMES)
 
