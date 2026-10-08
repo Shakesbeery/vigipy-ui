@@ -27,6 +27,7 @@ run_vite.*
 *.xlsx
 !tests/*.xlsx
 *.parquet
+experiments/*.csv
 
 # IDE files
 .vscode/

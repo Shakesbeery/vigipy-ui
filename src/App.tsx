@@ -11,7 +11,7 @@ import { LongitudinalViewer } from "./components/longitudinal/LongitudinalViewer
 import { VolcanoPlot } from "./components/analytics/VolcanoPlot";
 import { DdiNetworkGraph } from "./components/analytics/DdiNetworkGraph";
 import { OpenFDAModal } from "./components/ingestion/OpenFDAModal";
-import { FaersWarehouseModal } from "./components/ingestion/FaersWarehouseModal";
+import { VigilanceWarehouseModal } from "./components/ingestion/VigilanceWarehouseModal";
 import { DataQualityProfilerModal } from "./components/modals/DataQualityProfilerModal";
 import { ExportAuditModal } from "./components/modals/ExportAuditModal";
 import { VersionManagerModal } from "./components/modals/VersionManagerModal";
@@ -660,8 +660,8 @@ export const App: React.FC = () => {
         }}
       />
 
-      {/* Local FAERS Warehouse (bulk 2012+ cohorts) */}
-      <FaersWarehouseModal
+      {/* Unified Vigilance Warehouse (FAERS, VAERS, MAUDE) */}
+      <VigilanceWarehouseModal
         isOpen={isWarehouseOpen}
         onClose={() => setIsWarehouseOpen(false)}
         onDataIngested={(filePath) => {

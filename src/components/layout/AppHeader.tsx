@@ -117,10 +117,10 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           <button
             onClick={onOpenFaersWarehouse}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-teal-600/40 transition"
-            title="Local FAERS warehouse (2012→present): export drug-family / indication cohorts"
+            title="Unified Vigilance Warehouse: FAERS (Drugs), VAERS (Vaccines), and MAUDE (Devices)"
           >
             <HardDrive className="w-3.5 h-3.5 text-teal-400" />
-            <span className="hidden lg:inline">FAERS Warehouse</span>
+            <span className="hidden lg:inline">Vigilance Warehouse</span>
           </button>
         )}
 

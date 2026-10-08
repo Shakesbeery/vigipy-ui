@@ -865,6 +865,75 @@ def faers_export_endpoint(payload: Dict[str, Any]) -> Dict[str, Any]:
     return warehouse_job
 
 
+# ==============================================================================
+# UNIFIED VIGILANCE WAREHOUSE ENDPOINTS (FAERS, VAERS, MAUDE) via safety-db
+# ==============================================================================
+from . import warehouse_service  # noqa: E402
+
+
+@app.get("/api/warehouse/status")
+def warehouse_status_endpoint() -> Dict[str, Any]:
+    """Return unified warehouse status across all three surveillance domains."""
+    return warehouse_service.get_warehouse_status()
+
+
+@app.get("/api/warehouse/catalog")
+def warehouse_catalog_endpoint(source: str = Query("ALL")) -> Dict[str, Any]:
+    """Return category hierarchies and top products for specified source."""
+    return warehouse_service.get_catalog(source=source)
+
+
+@app.get("/api/warehouse/search")
+def warehouse_search_endpoint(
+    source: str = Query("ALL"),
+    q: str = Query(...),
+    kind: str = Query("product"),
+    limit: int = Query(50),
+) -> Dict[str, Any]:
+    """Search products, indications, or device problem terms."""
+    return {
+        "results": warehouse_service.search_entities(
+            source=source, query=q, kind=kind, limit=limit
+        )
+    }
+
+
+@app.post("/api/warehouse/preview")
+def warehouse_preview_endpoint(spec: Dict[str, Any]) -> Dict[str, Any]:
+    """Preview matched cohort records and estimated case volume."""
+    try:
+        return warehouse_service.preview_cohort(spec)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/warehouse/export")
+def warehouse_export_endpoint(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Export cohort or contingency table, with optional 1-click loading into workspace."""
+    spec = payload.get("spec", {})
+    fmt = payload.get("format", "contingency")
+    dest_path = payload.get("dest_path")
+    product_level = payload.get("product_level", "normalized_name")
+    min_count = int(payload.get("min_count", 1))
+    load_into_app = bool(payload.get("load_into_app", False))
+
+    threading.Thread(
+        target=warehouse_service.export_cohort_job,
+        kwargs={
+            "spec": spec,
+            "format": fmt,
+            "dest_path": dest_path,
+            "product_level": product_level,
+            "min_count": min_count,
+            "load_into_app": load_into_app,
+            "ingest_callback": ingest_data_file,
+        },
+        daemon=True,
+    ).start()
+
+    return warehouse_service.warehouse_job_state
+
+
 # --- Static Frontend Serving ---
 _dist_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "dist"))
 if os.path.exists(_dist_dir):
