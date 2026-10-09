@@ -135,16 +135,23 @@ def get_file_preview(file_path: str, preview_count: int = 15) -> FilePreviewResp
         "device",
     ]
 
-    # 1. Search non-code columns first
+    # 1. Search non-code columns for exact matches first
     for cand in prod_candidates:
-        for c_lower, orig in non_code_cols.items():
-            if cand == c_lower or cand in c_lower:
-                suggested["product_col"] = orig
-                break
-        if suggested["product_col"]:
+        if cand in non_code_cols:
+            suggested["product_col"] = non_code_cols[cand]
             break
 
-    # 2. Fallback to all columns (including code columns) if no name column exists
+    # 2. Fallback to substring match in non-code columns
+    if not suggested["product_col"]:
+        for cand in prod_candidates:
+            for c_lower, orig in non_code_cols.items():
+                if cand in c_lower:
+                    suggested["product_col"] = orig
+                    break
+            if suggested["product_col"]:
+                break
+
+    # 3. Fallback to all columns (including code columns) if no name column exists
     if not suggested["product_col"]:
         for cand in prod_candidates:
             for c_lower, orig in cols_lower.items():
@@ -166,13 +173,21 @@ def get_file_preview(file_path: str, preview_count: int = 15) -> FilePreviewResp
         "pt",
         "ae",
     ]
+    # Exact match in non-code columns first
     for cand in ae_candidates:
-        for c_lower, orig in non_code_cols.items():
-            if cand == c_lower or cand in c_lower:
-                suggested["ae_col"] = orig
-                break
-        if suggested["ae_col"]:
+        if cand in non_code_cols:
+            suggested["ae_col"] = non_code_cols[cand]
             break
+
+    # Substring match in non-code columns
+    if not suggested["ae_col"]:
+        for cand in ae_candidates:
+            for c_lower, orig in non_code_cols.items():
+                if cand in c_lower:
+                    suggested["ae_col"] = orig
+                    break
+            if suggested["ae_col"]:
+                break
 
     if not suggested["ae_col"]:
         for cand in ae_candidates:

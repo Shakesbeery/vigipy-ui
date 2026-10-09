@@ -30,6 +30,8 @@ run_vite.*
 experiments/*.csv
 public/vaers_*.csv
 public/vaers_*.parquet
+public/faers_*.csv
+public/faers_*.parquet
 
 # IDE files
 .vscode/
