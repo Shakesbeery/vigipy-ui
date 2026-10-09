@@ -28,6 +28,8 @@ run_vite.*
 !tests/*.xlsx
 *.parquet
 experiments/*.csv
+public/vaers_*.csv
+public/vaers_*.parquet
 
 # IDE files
 .vscode/
