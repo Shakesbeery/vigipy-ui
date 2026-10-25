@@ -50,6 +50,14 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
   const [dateCol, setDateCol] = useState<string>(
     preview.suggested_mapping?.date_col || ""
   );
+  const [reportIdCol, setReportIdCol] = useState<string>(
+    preview.suggested_mapping?.report_id_col || ""
+  );
+  const [covariateCols, setCovariateCols] = useState<string[]>(
+    Array.isArray(preview.suggested_mapping?.covariate_cols)
+      ? (preview.suggested_mapping.covariate_cols as string[])
+      : []
+  );
 
   // If no count column was suggested, default auto_populate_count to true
   const [autoPopulateCount, setAutoPopulateCount] = useState<boolean>(
@@ -72,6 +80,12 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
         /event|ae|reaction|pt|term/i.test(c)
       );
       if (match) setAeCol(match);
+    }
+    if (!reportIdCol && preview.columns.length > 0) {
+      const match = preview.columns.find((c) =>
+        /primaryid|case_id|safetyreportid|report_id|caseid|isr|report_num/i.test(c)
+      );
+      if (match) setReportIdCol(match);
     }
   }, [preview.columns]);
 
@@ -96,6 +110,7 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
   const aeSamples = useMemo(() => getSampleValues(aeCol), [aeCol, preview]);
   const countSamples = useMemo(() => getSampleValues(countCol), [countCol, preview]);
   const dateSamples = useMemo(() => getSampleValues(dateCol), [dateCol, preview]);
+  const reportIdSamples = useMemo(() => getSampleValues(reportIdCol), [reportIdCol, preview]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,6 +141,8 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
       ae_col: aeCol,
       count_col: autoPopulateCount ? null : countCol || null,
       date_col: dateCol ? dateCol : null,
+      report_id_col: reportIdCol ? reportIdCol : null,
+      covariate_cols: covariateCols.length > 0 ? covariateCols : null,
       auto_populate_count: autoPopulateCount,
       default_count: defaultCount > 0 ? defaultCount : 1,
     };
@@ -559,6 +576,103 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
                   ))}
                 </div>
               </div>
+            )}
+          </div>
+
+          {/* 5. Case / Report Identifier Column */}
+          <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 transition space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-200">
+                <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                <span>Case / Safety Report ID (convert_binary & convert_ddi)</span>
+              </label>
+              <span className="text-[10px] font-mono uppercase text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">
+                Recommended for Case Data
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Unique identifier per patient / safety report (e.g. PRIMARYID, SAFETYREPORTID). Enables report-level Relaxed LASSO regression and true multi-drug interaction discovery (SCORE-DDI).
+            </p>
+
+            <select
+              value={reportIdCol}
+              onChange={(e) => setReportIdCol(e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs font-mono text-slate-100 focus:outline-none focus:border-cyan-500 transition"
+            >
+              <option value="">-- None / Standard contingency aggregation (convert) --</option>
+              {preview.columns.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+
+            {reportIdSamples.length > 0 && (
+              <div className="pt-2">
+                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block mb-1">
+                  Sample values:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {reportIdSamples.map((s, i) => (
+                    <span
+                      key={i}
+                      className="px-2 py-0.5 rounded bg-cyan-950/40 border border-cyan-800/40 text-[11px] text-cyan-300 font-mono truncate max-w-xs"
+                    >
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 6. Patient-Level Confounding Covariates */}
+          <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 transition space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-200">
+                <span className="w-2 h-2 rounded-full bg-indigo-400" />
+                <span>Patient Covariates (Multivariable Confounding Control)</span>
+              </label>
+              <span className="text-[10px] font-mono uppercase text-slate-400 bg-slate-800 px-2 py-0.5 rounded">
+                Optional
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Demographic or clinical covariates (e.g. Age, Sex, Weight) to control for confounding via LASSO penalized multivariable regression.
+            </p>
+
+            <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 rounded-xl bg-slate-950 border border-slate-800">
+              {preview.columns
+                .filter((c) => c !== productCol && c !== aeCol && c !== countCol && c !== dateCol && c !== reportIdCol)
+                .map((col) => {
+                  const isChecked = covariateCols.includes(col);
+                  return (
+                    <button
+                      key={col}
+                      type="button"
+                      onClick={() => {
+                        if (isChecked) {
+                          setCovariateCols(covariateCols.filter((c) => c !== col));
+                        } else {
+                          setCovariateCols([...covariateCols, col]);
+                        }
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-mono transition flex items-center gap-1.5 ${
+                        isChecked
+                          ? "bg-indigo-600 text-white font-medium shadow-sm"
+                          : "bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800"
+                      }`}
+                    >
+                      <span>{col}</span>
+                      {isChecked && <CheckCircle2 className="w-3 h-3 text-indigo-200" />}
+                    </button>
+                  );
+                })}
+            </div>
+            {covariateCols.length > 0 && (
+              <span className="text-[11px] text-indigo-300 font-mono block">
+                {covariateCols.length} covariate(s) selected: {covariateCols.join(", ")}
+              </span>
             )}
           </div>
         </div>

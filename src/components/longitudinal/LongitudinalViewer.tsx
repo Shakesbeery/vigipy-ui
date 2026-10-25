@@ -42,7 +42,18 @@ import {
 import { getTierBadgeClass } from "../inspector/SignalDrawer";
 import { MultiAELongitudinalChart } from "./MultiAELongitudinalChart";
 
-export type LongitudinalMethod = "bcpnn" | "gps" | "prr" | "ror" | "lasso" | "score_da" | "all";
+export type LongitudinalMethod =
+  | "bcpnn"
+  | "gps"
+  | "prr"
+  | "ror"
+  | "lasso"
+  | "score_da"
+  | "zigps"
+  | "aegis"
+  | "maxsprt"
+  | "cusum"
+  | "all";
 export type LongitudinalCadence = "YE" | "QE" | "ME";
 export type LongitudinalCadenceLabel = "Yearly" | "Quarterly" | "Monthly";
 export type LongitudinalMode = "cumulative" | "disjoint";
@@ -140,6 +151,46 @@ const METHOD_CONFIGS: Record<string, MethodMeta> = {
     metricLabel: "Standardized Outlier Residual",
     normalize: (score) => (score !== null && score !== undefined ? Math.max(0, score + 1.0) : null),
   },
+  ZIGPS: {
+    name: "ZIGPS",
+    color: "#8b5cf6", // Violet
+    threshold: 1.0,
+    thresholdLabel: "EBGM_zi ≥ 1.0",
+    metricLabel: "Zero-Inflated EBGM",
+    normalize: (score) => (score !== null && score !== undefined ? Math.max(0, score / 1.0) : null),
+  },
+  AEGIS: {
+    name: "AEGIS",
+    color: "#38bdf8", // Sky
+    threshold: 1.0,
+    thresholdLabel: "Score ≥ 1.0",
+    metricLabel: "AEGIS Unmasking Metric",
+    normalize: (score) => (score !== null && score !== undefined ? Math.max(0, score / 1.0) : null),
+  },
+  MAXSPRT: {
+    name: "MaxSPRT",
+    color: "#f97316", // Orange
+    threshold: 2.0,
+    thresholdLabel: "LLR ≥ CV",
+    metricLabel: "Log-Likelihood Ratio (LLR)",
+    normalize: (score) => (score !== null && score !== undefined ? Math.max(0, score / 2.0) : null),
+  },
+  CUSUM: {
+    name: "CUSUM-DA",
+    color: "#e11d48", // Rose Red
+    threshold: 3.0,
+    thresholdLabel: "S_n ≥ h",
+    metricLabel: "Cumulative Sum Statistic",
+    normalize: (score) => (score !== null && score !== undefined ? Math.max(0, score / 3.0) : null),
+  },
+  CUSUM_DA: {
+    name: "CUSUM-DA",
+    color: "#e11d48", // Rose Red
+    threshold: 3.0,
+    thresholdLabel: "S_n ≥ h",
+    metricLabel: "Cumulative Sum Statistic",
+    normalize: (score) => (score !== null && score !== undefined ? Math.max(0, score / 3.0) : null),
+  },
 };
 
 function formatTimestampTick(ts: string): string {
@@ -176,6 +227,11 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
     LASSO: true,
     SCORE_DA: true,
     SCORE: true,
+    ZIGPS: true,
+    AEGIS: true,
+    MAXSPRT: true,
+    CUSUM: true,
+    CUSUM_DA: true,
   });
 
   // Dynamic Candidate Signals from Longitudinal Time Slices
@@ -355,6 +411,7 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
         const norm2 = m2.toLowerCase().replace(/[-_]/g, "");
         if (norm1 === norm2) return true;
         if ((norm1 === "score" || norm1 === "scoreda") && (norm2 === "score" || norm2 === "scoreda")) return true;
+        if ((norm1 === "cusum" || norm1 === "cusumda") && (norm2 === "cusum" || norm2 === "cusumda")) return true;
         return false;
       };
 
@@ -500,7 +557,7 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
     if (trajectoryData?.onset_dates) {
       for (const [mName, oDate] of Object.entries(trajectoryData.onset_dates)) {
         if (oDate) {
-          notices.push({ method: mName.toUpperCase(), date: formatTimestampTick(oDate) });
+          notices.push({ method: mName.toUpperCase(), date: formatTimestampTick(String(oDate)) });
         } else {
           unalerted.push(mName.toUpperCase());
         }
@@ -523,7 +580,8 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
     const seriesByMethod: Record<string, TrajectoryPoint[]> = {};
     if (multiTrajectories && Object.keys(multiTrajectories).length > 0) {
       Object.entries(multiTrajectories).forEach(([m, pts]) => {
-        if (pts && pts.length > 0) seriesByMethod[m.toUpperCase()] = pts;
+        const points = pts as TrajectoryPoint[];
+        if (points && points.length > 0) seriesByMethod[m.toUpperCase()] = points;
       });
     } else if (trajectory && trajectory.length > 0) {
       seriesByMethod[method.toUpperCase()] = trajectory;
@@ -1051,6 +1109,10 @@ export const LongitudinalViewer: React.FC<LongitudinalViewerProps> = ({
                   <option value="ror" className="bg-slate-900 text-white">ROR (Odds Ratio)</option>
                   <option value="lasso" className="bg-slate-900 text-white">LASSO (Penalized Beta)</option>
                   <option value="score_da" className="bg-slate-900 text-white">SCORE-DA (Residuals)</option>
+                  <option value="zigps" className="bg-slate-900 text-white">ZIGPS (Zero-Inflated EBGM)</option>
+                  <option value="aegis" className="bg-slate-900 text-white">AEGIS (Syndromic Unmasking)</option>
+                  <option value="maxsprt" className="bg-slate-900 text-white">MaxSPRT (Sequential LLR)</option>
+                  <option value="cusum" className="bg-slate-900 text-white">CUSUM-DA (Change-Point)</option>
                 </select>
               </div>
             )}

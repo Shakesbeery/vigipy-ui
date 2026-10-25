@@ -142,8 +142,8 @@ class AppState:
             for m in methods:
                 m_low = m.lower().strip()
                 cands = [f"alert_{m_low}", f"alert_{m.upper().strip()}"]
-                if m_low in ("score", "score_da"):
-                    cands += ["alert_score", "alert_score_da"]
+                if m_low in ("score", "score_da", "score_ddi"):
+                    cands += ["alert_score", "alert_score_da", "alert_score_ddi"]
                 for c in cands:
                     if c in df.columns:
                         method_mask |= df[c].fillna(False).to_numpy()

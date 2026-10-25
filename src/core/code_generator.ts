@@ -31,16 +31,21 @@ export function generateVigipyPythonCode(params: CodeGenParams): string {
     targetEvent = 'EVENT_NAME',
     timeUnit = 'YE',
     mode = 'cumulative',
-    vigipyVersion = '3.4.0',
+    vigipyVersion = '3.5.1',
   } = params;
 
   const prr = config.prr || { enabled: true, decision_metric: 'fdr', decision_thres: 0.05, min_events: 3, relative_risk: 1.0, continuity_correction: true };
   const ror = config.ror || { enabled: true, decision_metric: 'fdr', decision_thres: 0.05, min_events: 3, relative_risk: 1.0, continuity_correction: true };
   const rfet = config.rfet || { enabled: true, decision_metric: 'fdr', decision_thres: 0.05, min_events: 3, mid_pval: true };
-  const bcpnn = config.bcpnn || { enabled: true, decision_metric: 'rank', decision_thres: 0.0, min_events: 3, ranking_statistic: 'quantile' };
-  const gps = config.gps || { enabled: true, decision_metric: 'rank', decision_thres: 0.05, min_events: 3, ranking_statistic: 'log2' };
+  const bcpnn = config.bcpnn || { enabled: true, decision_metric: 'rank' as const, decision_thres: 0.0, min_events: 3, ranking_statistic: 'quantile' as const, relative_risk: 1.0 };
+  const gps = config.gps || { enabled: true, decision_metric: 'rank' as const, decision_thres: 0.05, min_events: 3, ranking_statistic: 'log2' as const, relative_risk: 1.0 };
   const lasso = config.lasso || { enabled: false, lasso_thresh: 0.0, alpha: 0.5, min_events: 3, num_bootstrap: 10, relaxed: true };
   const scoreDa = config.score_da || { enabled: false, latent_rank: 5, syndromic_weight: 1.0, sparsity_param: 0.1 };
+  const scoreDdi = config.score_ddi || { enabled: false, interaction_model: 'multiplicative' as const, syndromic_weight: 0.5, sparsity_param: 1.0, fdr_threshold: 0.05, min_events: 1 };
+  const zigps = config.zigps || { enabled: false, decision_metric: 'rank' as const, decision_thres: 0.05, min_events: 3, ranking_statistic: 'log2' as const, relative_risk: 1.0 };
+  const aegis = config.aegis || { enabled: false, decision_metric: 'combined' as const, fdr_threshold: 0.05, lb_threshold: 1.0, min_events: 3, null_rr: 1.0, huber_delta: 2.0, top_k_neighbors: 4, velocity_gain: 0.85, syndromic_gain: 1.5, syndromic_coupling: 0.6, martingale_coupling: 0.55 };
+  const maxsprt = config.maxsprt || { enabled: false, alpha: 0.05, min_events: 3, upper_limit: 50.0, model: 'poisson' as const, critical_value: null };
+  const cusum = config.cusum || { enabled: false, target_rr: 2.0, arl0: 500.0, min_events: 3, control_limit: null };
 
   return `"""
 Pharmacovigilance Disproportionality & Surveillance Pipeline
@@ -58,6 +63,9 @@ from vigipy import (
     analyze_all,
     consensus_analysis,
     LongitudinalModel,
+    convert,
+    convert_binary,
+    convert_ddi,
     PRRConfig,
     RORConfig,
     RFETConfig,
@@ -65,6 +73,11 @@ from vigipy import (
     GPSConfig,
     LASSOConfig,
     SCOREConfig,
+    SCOREDDIConfig,
+    ZIGPSConfig,
+    AEGISConfig,
+    MaxSPRTConfig,
+    CUSUMConfig,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -156,6 +169,61 @@ ${scoreDa.enabled ? `configs.append(
         sparsity_param=${scoreDa.sparsity_param || 0.1},
     )
 )` : '# SCORE-DA disabled'}
+
+${scoreDdi.enabled ? `configs.append(
+    SCOREDDIConfig(
+        interaction_model="${scoreDdi.interaction_model || 'multiplicative'}",
+        syndromic_weight=${scoreDdi.syndromic_weight || 0.5},
+        sparsity_param=${scoreDdi.sparsity_param || 1.0},
+        fdr_threshold=${scoreDdi.fdr_threshold || 0.05},
+        min_events=${scoreDdi.min_events || 1},
+    )
+)` : '# SCORE-DDI disabled'}
+
+${zigps.enabled ? `configs.append(
+    ZIGPSConfig(
+        relative_risk=${zigps.relative_risk || 1.0},
+        min_events=${zigps.min_events || 3},
+        decision_metric="${zigps.decision_metric || 'rank'}",
+        decision_thres=${zigps.decision_thres || 0.05},
+        ranking_statistic="${zigps.ranking_statistic || 'log2'}",
+    )
+)` : '# ZIGPS disabled'}
+
+${aegis.enabled ? `configs.append(
+    AEGISConfig(
+        min_events=${aegis.min_events || 3},
+        fdr_threshold=${aegis.fdr_threshold || 0.05},
+        lb_threshold=${aegis.lb_threshold || 1.0},
+        decision_metric="${aegis.decision_metric || 'combined'}",
+        null_rr=${aegis.null_rr || 1.0},
+        huber_delta=${aegis.huber_delta || 2.0},
+        top_k_neighbors=${aegis.top_k_neighbors || 4},
+        velocity_gain=${aegis.velocity_gain || 0.85},
+        syndromic_gain=${aegis.syndromic_gain || 1.5},
+        syndromic_coupling=${aegis.syndromic_coupling || 0.6},
+        martingale_coupling=${aegis.martingale_coupling || 0.55},
+    )
+)` : '# AEGIS disabled'}
+
+${maxsprt.enabled ? `configs.append(
+    MaxSPRTConfig(
+        alpha=${maxsprt.alpha || 0.05},
+        min_events=${maxsprt.min_events || 3},
+        upper_limit=${maxsprt.upper_limit || 50.0},
+        model="${maxsprt.model || 'poisson'}",
+        ${maxsprt.critical_value ? `critical_value=${maxsprt.critical_value},` : ''}
+    )
+)` : '# MaxSPRT disabled'}
+
+${cusum.enabled ? `configs.append(
+    CUSUMConfig(
+        target_rr=${cusum.target_rr || 2.0},
+        arl0=${cusum.arl0 || 500.0},
+        min_events=${cusum.min_events || 3},
+        ${cusum.control_limit ? `control_limit=${cusum.control_limit},` : ''}
+    )
+)` : '# CUSUM-DA disabled'}
 
 # ---------------------------------------------------------
 # 3. DISPROPORTIONALITY ANALYSIS EXECUTION

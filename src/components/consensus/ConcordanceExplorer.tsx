@@ -28,7 +28,7 @@ interface ConcordanceExplorerProps {
   concordanceData?: ConcordanceResponse | null;
 }
 
-const METHODS_LIST = ["PRR", "ROR", "RFET", "BCPNN", "GPS", "LASSO", "SCORE"];
+const METHODS_LIST = ["PRR", "ROR", "RFET", "BCPNN", "GPS", "LASSO", "SCORE_DA", "SCORE_DDI"];
 
 const METHOD_LABELS: Record<string, { name: string; full: string; type: string }> = {
   PRR: { name: "PRR", full: "Proportional Reporting Ratio", type: "Frequentist Rate Ratio" },
@@ -36,9 +36,10 @@ const METHOD_LABELS: Record<string, { name: string; full: string; type: string }
   RFET: { name: "RFET", full: "Reporting Fisher's Exact Test", type: "Exact Hypergeometric" },
   BCPNN: { name: "BCPNN", full: "Bayesian Confidence Propagation Neural Network", type: "Empirical Bayes (IC)" },
   GPS: { name: "GPS", full: "Gamma Poisson Shrinker", type: "Empirical Bayes (EBGM)" },
-  LASSO: { name: "LASSO", full: "L1-Penalized Multi-Variable Regression", type: "High-Dimensional GLM" },
-  SCORE: { name: "SCORE", full: "Syndromic Confounding & Overdispersion Removal", type: "Low-Rank Regularized Deconvolution" },
-  SCORE_DA: { name: "SCORE_DA", full: "Syndromic Confounding & Overdispersion Removal", type: "Low-Rank Regularized Deconvolution" },
+  LASSO: { name: "LASSO", full: "L1-Penalized Multi-Variable Regression", type: "Two-Stage Relaxed aROR" },
+  SCORE: { name: "SCORE-DA", full: "Syndromic Cellwise Outlier & Residual Estimation", type: "Low-Rank & Graph Laplacian Deconvolution" },
+  SCORE_DA: { name: "SCORE-DA", full: "Syndromic Cellwise Outlier & Residual Estimation", type: "Low-Rank & Graph Laplacian Deconvolution" },
+  SCORE_DDI: { name: "SCORE-DDI", full: "Syndromic Drug-Drug & Multi-Drug Interaction Discovery", type: "Counterfactual Matrix FISTA Synergy" },
 };
 
 export const ConcordanceExplorer: React.FC<ConcordanceExplorerProps> = ({

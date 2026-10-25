@@ -12,6 +12,8 @@ class ColumnMappingRequest(BaseModel):
     ae_col: str = Field(..., description="Column name for Adverse Event.")
     count_col: Optional[str] = Field(None, description="Column name for incident count.")
     date_col: Optional[str] = Field(None, description="Column name for report date.")
+    report_id_col: Optional[str] = Field(None, description="Column name for individual report / patient identifier (for convert_binary & convert_ddi).")
+    covariate_cols: Optional[List[str]] = Field(None, description="Optional per-report covariate columns (e.g. ['age', 'sex']) for multivariable adjustment.")
     auto_populate_count: bool = Field(
         False,
         description="Whether to auto-populate count when column is absent or empty (1 row = 1 incident)."
@@ -137,15 +139,88 @@ class SCOREConfigSchema(BaseModel):
     seed: int = 42
 
 
+class SCOREDDIConfigSchema(BaseModel):
+    enabled: bool = False
+    interaction_model: Literal["multiplicative", "additive"] = "multiplicative"
+    syndromic_weight: float = 0.5
+    sparsity_param: float = 1.0
+    fdr_threshold: float = 0.05
+    min_events: int = 1
+    max_iter: int = 50
+    tol: float = 0.0001
+    n_jobs: int = 1
+    seed: int = 42
+
+
+class AEGISConfigSchema(BaseModel):
+    enabled: bool = False
+    min_events: int = 3
+    fdr_threshold: float = 0.05
+    lb_threshold: float = 1.0
+    decision_metric: Literal["combined", "lb", "fdr", "e_value"] = "combined"
+    null_rr: float = 1.0
+    huber_delta: float = 2.0
+    sinkhorn_iters: int = 5
+    latent_rank: int = 2
+    min_npmi: float = 0.05
+    syndromic_gain: float = 1.5
+    syndromic_coupling: float = 0.6
+    martingale_coupling: float = 0.55
+    top_k_neighbors: int = 4
+    velocity_gain: float = 0.85
+    fast_window_fraction: float = 0.25
+    seed: int = 42
+
+
+class ZIGPSConfigSchema(BaseModel):
+    enabled: bool = False
+    relative_risk: float = 1.0
+    min_events: int = 3
+    decision_metric: Literal["rank", "fdr", "signals"] = "rank"
+    decision_thres: float = 0.05
+    ranking_statistic: Literal["log2", "p_value", "quantile"] = "log2"
+    expected_method: Literal["mantel-haentzel", "poisson", "negative-binomial"] = "mantel-haentzel"
+    method_alpha: float = 1.0
+    minimization_method: str = "L-BFGS-B"
+
+
+class MaxSPRTConfigSchema(BaseModel):
+    enabled: bool = False
+    alpha: float = 0.05
+    min_events: int = 3
+    upper_limit: float = 50.0
+    upper_rr_cap: float = 100.0
+    model: Literal["poisson", "binomial"] = "poisson"
+    expected_method: Literal["mantel-haentzel", "poisson", "negative-binomial"] = "mantel-haentzel"
+    method_alpha: float = 1.0
+    critical_value: Optional[float] = None
+
+
+class CUSUMConfigSchema(BaseModel):
+    enabled: bool = False
+    target_rr: float = 2.0
+    arl0: float = 500.0
+    min_events: int = 3
+    expected_method: Literal["mantel-haentzel", "poisson", "negative-binomial"] = "mantel-haentzel"
+    method_alpha: float = 1.0
+    control_limit: Optional[float] = None
+
+
 class RunAnalysisRequest(BaseModel):
     prr: Optional[PRRConfigSchema] = None
     ror: Optional[RORConfigSchema] = None
     rfet: Optional[RFETConfigSchema] = None
     bcpnn: Optional[BCPNNConfigSchema] = None
     gps: Optional[GPSConfigSchema] = None
+    zigps: Optional[ZIGPSConfigSchema] = None
     lasso: Optional[LASSOConfigSchema] = None
     score_da: Optional[SCOREConfigSchema] = None
     score: Optional[SCOREConfigSchema] = None
+    score_ddi: Optional[SCOREDDIConfigSchema] = None
+    aegis: Optional[AEGISConfigSchema] = None
+    maxsprt: Optional[MaxSPRTConfigSchema] = None
+    cusum: Optional[CUSUMConfigSchema] = None
+    cusum_da: Optional[CUSUMConfigSchema] = None
     consensus: bool = True
 
 
@@ -210,6 +285,11 @@ class MethodSignalInspection(BaseModel):
     expected_count: Optional[float]
     threshold: Optional[str] = None
     threshold_metric: Optional[str] = None
+    unmasking_ratio: Optional[float] = None
+    surge_velocity: Optional[float] = None
+    pi0_structural: Optional[float] = None
+    critical_value: Optional[float] = None
+    e_value: Optional[float] = None
 
 
 
@@ -243,8 +323,8 @@ class Contingency2x2Response(BaseModel):
 # --- Longitudinal Schemas ---
 
 class LongitudinalRunRequest(BaseModel):
-    method: Literal["prr", "ror", "rfet", "bcpnn", "gps", "lasso", "score_da", "score", "all"] = "bcpnn"
-    methods: Optional[List[Literal["prr", "ror", "rfet", "bcpnn", "gps", "lasso", "score_da", "score"]]] = None
+    method: Literal["prr", "ror", "rfet", "bcpnn", "gps", "lasso", "score_da", "score", "score_ddi", "all"] = "bcpnn"
+    methods: Optional[List[Literal["prr", "ror", "rfet", "bcpnn", "gps", "lasso", "score_da", "score", "score_ddi"]]] = None
     time_unit: Literal["YE", "QE", "ME"] = "YE"
     mode: Literal["cumulative", "disjoint"] = "cumulative"
     include_gaps: bool = False

@@ -414,6 +414,41 @@ def _get_method_threshold_str(method_name: str, res_or_params: Any = None) -> tu
         fdr = input_params.get("fdr_threshold", 0.05)
         return f"FDR ≤ {fdr}", "FDR"
 
+    elif m_low in ("score_ddi", "ddi"):
+        fdr = input_params.get("fdr_threshold", 0.05)
+        return f"FDR ≤ {fdr}", "FDR"
+
+    elif m_low == "zigps":
+        dec_metric = input_params.get("decision_metric", "rank")
+        thres = input_params.get("decision_thres", 0.05)
+        if dec_metric == "rank":
+            return f"EB₀₅ ≥ {thres if thres > 0.1 else 2.0}", "EB05"
+        elif dec_metric == "fdr":
+            return f"FDR ≤ {thres}", "FDR"
+        return "EB₀₅ ≥ 2.0", "EB05"
+
+    elif m_low == "aegis":
+        dec_metric = input_params.get("decision_metric", "combined")
+        lb_t = input_params.get("lb_threshold", 1.0)
+        fdr_t = input_params.get("fdr_threshold", 0.05)
+        if dec_metric == "combined":
+            return f"LB > {lb_t} & FDR ≤ {fdr_t}", "AEGIS Combined"
+        elif dec_metric == "lb":
+            return f"LB > {lb_t}", "AEGIS_LB"
+        elif dec_metric == "fdr":
+            return f"FDR ≤ {fdr_t}", "FDR"
+        elif dec_metric == "e_value":
+            return f"e-FDR ≤ {fdr_t}", "e_fdr"
+        return f"LB > {lb_t}", "AEGIS_LB"
+
+    elif m_low == "maxsprt":
+        cv = input_params.get("critical_value")
+        return f"LLR ≥ {cv:.2f}" if cv is not None else "LLR ≥ CV", "LLR"
+
+    elif m_low in ("cusum", "cusum_da"):
+        cl = input_params.get("control_limit")
+        return f"CUSUM ≥ {cl:.2f}" if cl is not None else "CUSUM ≥ h", "CUSUM"
+
     return "Pass Threshold", "Score"
 
 
@@ -448,6 +483,29 @@ def inspect_signal_detail(payload: Dict[str, Any]) -> InspectSignalResponse:
             m_name_str = str(r["Method"])
             raw_res = state.consensus_result.raw_results.get(m_name_str.lower()) if state.consensus_result.raw_results else None
             thres_str, thres_metric = _get_method_threshold_str(m_name_str, raw_res)
+
+            extra_telemetry: dict[str, Any] = {}
+            if raw_res is not None and hasattr(raw_res, "inspect_pair"):
+                try:
+                    target_p = actual_prod if "actual_prod" in locals() else prod_str
+                    target_e = actual_ae if "actual_ae" in locals() else ae_str
+                    pair_s = raw_res.inspect_pair(target_p, target_e)
+                    if pair_s is not None and not pair_s.empty:
+                        for k, v in pair_s.items():
+                            k_low = str(k).lower().replace(" ", "_")
+                            if "unmasking" in k_low and not pd.isna(v):
+                                extra_telemetry["unmasking_ratio"] = float(v)
+                            elif "surge" in k_low and not pd.isna(v):
+                                extra_telemetry["surge_velocity"] = float(v)
+                            elif ("structural" in k_low or "pi0" in k_low) and not pd.isna(v):
+                                extra_telemetry["pi0_structural"] = float(v)
+                            elif "critical" in k_low and not pd.isna(v):
+                                extra_telemetry["critical_value"] = float(v)
+                            elif "e_value" in k_low and not pd.isna(v):
+                                extra_telemetry["e_value"] = float(v)
+                except Exception:
+                    pass
+
             method_inspections.append(
                 MethodSignalInspection(
                     method=m_name_str,
@@ -462,6 +520,7 @@ def inspect_signal_detail(payload: Dict[str, Any]) -> InspectSignalResponse:
                     expected_count=float(r["Expected Count"]) if not pd.isna(r["Expected Count"]) else None,
                     threshold=thres_str,
                     threshold_metric=thres_metric,
+                    **extra_telemetry,
                 )
             )
 
@@ -863,6 +922,75 @@ def faers_export_endpoint(payload: Dict[str, Any]) -> Dict[str, Any]:
     warehouse_job = {"status": "running", "step": "Starting export...", "error": None, "result": None}
     threading.Thread(target=_export_worker, args=(mode, payload), daemon=True).start()
     return warehouse_job
+
+
+# ==============================================================================
+# UNIFIED VIGILANCE WAREHOUSE ENDPOINTS (FAERS, VAERS, MAUDE) via safety-db
+# ==============================================================================
+from . import warehouse_service  # noqa: E402
+
+
+@app.get("/api/warehouse/status")
+def warehouse_status_endpoint() -> Dict[str, Any]:
+    """Return unified warehouse status across all three surveillance domains."""
+    return warehouse_service.get_warehouse_status()
+
+
+@app.get("/api/warehouse/catalog")
+def warehouse_catalog_endpoint(source: str = Query("ALL")) -> Dict[str, Any]:
+    """Return category hierarchies and top products for specified source."""
+    return warehouse_service.get_catalog(source=source)
+
+
+@app.get("/api/warehouse/search")
+def warehouse_search_endpoint(
+    source: str = Query("ALL"),
+    q: str = Query(...),
+    kind: str = Query("product"),
+    limit: int = Query(50),
+) -> Dict[str, Any]:
+    """Search products, indications, or device problem terms."""
+    return {
+        "results": warehouse_service.search_entities(
+            source=source, query=q, kind=kind, limit=limit
+        )
+    }
+
+
+@app.post("/api/warehouse/preview")
+def warehouse_preview_endpoint(spec: Dict[str, Any]) -> Dict[str, Any]:
+    """Preview matched cohort records and estimated case volume."""
+    try:
+        return warehouse_service.preview_cohort(spec)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/warehouse/export")
+def warehouse_export_endpoint(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Export cohort or contingency table, with optional 1-click loading into workspace."""
+    spec = payload.get("spec", {})
+    fmt = payload.get("format", "contingency")
+    dest_path = payload.get("dest_path")
+    product_level = payload.get("product_level", "normalized_name")
+    min_count = int(payload.get("min_count", 1))
+    load_into_app = bool(payload.get("load_into_app", False))
+
+    threading.Thread(
+        target=warehouse_service.export_cohort_job,
+        kwargs={
+            "spec": spec,
+            "format": fmt,
+            "dest_path": dest_path,
+            "product_level": product_level,
+            "min_count": min_count,
+            "load_into_app": load_into_app,
+            "ingest_callback": ingest_data_file,
+        },
+        daemon=True,
+    ).start()
+
+    return warehouse_service.warehouse_job_state
 
 
 # --- Static Frontend Serving ---

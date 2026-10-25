@@ -30,8 +30,8 @@ export const ExportAuditModal: React.FC<ExportAuditModalProps> = ({
     setExportingExcel(true);
     setExcelSuccess(null);
     try {
-      const res = await exportAnalysisData("xlsx");
-      setExcelSuccess(res.file_path);
+      const res = await exportAnalysisData({ format: "xlsx", filtered_only: false });
+      setExcelSuccess(res.file_path || "Export complete.");
     } catch (err: any) {
       alert(err?.message || "Failed to export Excel report.");
     } finally {

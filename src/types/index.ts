@@ -13,6 +13,8 @@ export interface ColumnMappingRequest {
   ae_col: string;
   count_col?: string | null;
   date_col?: string | null;
+  report_id_col?: string | null;
+  covariate_cols?: string[] | null;
   auto_populate_count: boolean;
   default_count: number;
 }
@@ -22,7 +24,9 @@ export interface SuggestedMapping {
   ae_col?: string | null;
   count_col?: string | null;
   date_col?: string | null;
-  [key: string]: string | null | undefined;
+  report_id_col?: string | null;
+  covariate_cols?: string[] | null;
+  [key: string]: any;
 }
 
 export interface FilePreviewResponse {
@@ -147,15 +151,88 @@ export interface SCOREConfigSchema {
   seed: number;
 }
 
+export interface SCOREDDIConfigSchema {
+  enabled: boolean;
+  interaction_model: "multiplicative" | "additive";
+  syndromic_weight: number;
+  sparsity_param: number;
+  fdr_threshold: number;
+  min_events: number;
+  max_iter: number;
+  tol: number;
+  n_jobs: number;
+  seed: number;
+}
+
+export interface AEGISConfigSchema {
+  enabled: boolean;
+  min_events: number;
+  fdr_threshold: number;
+  lb_threshold: number;
+  decision_metric: "combined" | "lb" | "fdr" | "e_value";
+  null_rr: number;
+  huber_delta: number;
+  sinkhorn_iters: number;
+  latent_rank: number;
+  min_npmi: number;
+  syndromic_gain: number;
+  syndromic_coupling: number;
+  martingale_coupling: number;
+  top_k_neighbors: number;
+  velocity_gain: number;
+  fast_window_fraction: number;
+  seed: number;
+}
+
+export interface ZIGPSConfigSchema {
+  enabled: boolean;
+  relative_risk: number;
+  min_events: number;
+  decision_metric: "rank" | "fdr" | "signals";
+  decision_thres: number;
+  ranking_statistic: "log2" | "p_value" | "quantile";
+  expected_method: ExpectedMethod;
+  method_alpha: number;
+  minimization_method: string;
+}
+
+export interface MaxSPRTConfigSchema {
+  enabled: boolean;
+  alpha: number;
+  min_events: number;
+  upper_limit: number;
+  upper_rr_cap: number;
+  model: "poisson" | "binomial";
+  expected_method: ExpectedMethod;
+  method_alpha: number;
+  critical_value?: number | null;
+}
+
+export interface CUSUMConfigSchema {
+  enabled: boolean;
+  target_rr: number;
+  arl0: number;
+  min_events: number;
+  expected_method: ExpectedMethod;
+  method_alpha: number;
+  control_limit?: number | null;
+}
+
 export interface RunAnalysisRequest {
   prr?: PRRConfigSchema | null;
   ror?: RORConfigSchema | null;
   rfet?: RFETConfigSchema | null;
   bcpnn?: BCPNNConfigSchema | null;
   gps?: GPSConfigSchema | null;
+  zigps?: ZIGPSConfigSchema | null;
   lasso?: LASSOConfigSchema | null;
   score_da?: SCOREConfigSchema | null;
   score?: SCOREConfigSchema | null;
+  score_ddi?: SCOREDDIConfigSchema | null;
+  aegis?: AEGISConfigSchema | null;
+  maxsprt?: MaxSPRTConfigSchema | null;
+  cusum?: CUSUMConfigSchema | null;
+  cusum_da?: CUSUMConfigSchema | null;
   consensus: boolean;
 }
 
@@ -222,6 +299,11 @@ export interface MethodSignalInspection {
   expected_count?: number | null;
   threshold?: string | null;
   threshold_metric?: string | null;
+  unmasking_ratio?: number | null;
+  surge_velocity?: number | null;
+  pi0_structural?: number | null;
+  critical_value?: number | null;
+  e_value?: number | null;
 }
 
 export interface InspectSignalResponse {
@@ -254,8 +336,8 @@ export interface Contingency2x2Response {
 // --- Longitudinal Schemas ---
 
 export interface LongitudinalRunRequest {
-  method: "prr" | "ror" | "rfet" | "bcpnn" | "gps" | "lasso" | "score_da" | "all";
-  methods?: ("prr" | "ror" | "rfet" | "bcpnn" | "gps" | "lasso" | "score_da")[];
+  method: "prr" | "ror" | "rfet" | "bcpnn" | "gps" | "lasso" | "score_da" | "score" | "score_ddi" | "all";
+  methods?: ("prr" | "ror" | "rfet" | "bcpnn" | "gps" | "lasso" | "score_da" | "score" | "score_ddi")[];
   time_unit: "YE" | "QE" | "ME";
   mode: "cumulative" | "disjoint";
   include_gaps: boolean;
@@ -430,14 +512,86 @@ export const DEFAULT_SCORE_CONFIG: SCOREConfigSchema = {
   seed: 42,
 };
 
+export const DEFAULT_SCORE_DDI_CONFIG: SCOREDDIConfigSchema = {
+  enabled: false,
+  interaction_model: "multiplicative",
+  syndromic_weight: 0.5,
+  sparsity_param: 1.0,
+  fdr_threshold: 0.05,
+  min_events: 1,
+  max_iter: 50,
+  tol: 0.0001,
+  n_jobs: 1,
+  seed: 42,
+};
+
+export const DEFAULT_AEGIS_CONFIG: AEGISConfigSchema = {
+  enabled: false,
+  min_events: 3,
+  fdr_threshold: 0.05,
+  lb_threshold: 1.0,
+  decision_metric: "combined",
+  null_rr: 1.0,
+  huber_delta: 2.0,
+  sinkhorn_iters: 5,
+  latent_rank: 2,
+  min_npmi: 0.05,
+  syndromic_gain: 1.5,
+  syndromic_coupling: 0.6,
+  martingale_coupling: 0.55,
+  top_k_neighbors: 4,
+  velocity_gain: 0.85,
+  fast_window_fraction: 0.25,
+  seed: 42,
+};
+
+export const DEFAULT_ZIGPS_CONFIG: ZIGPSConfigSchema = {
+  enabled: false,
+  relative_risk: 1.0,
+  min_events: 3,
+  decision_metric: "rank",
+  decision_thres: 0.05,
+  ranking_statistic: "log2",
+  expected_method: "mantel-haentzel",
+  method_alpha: 1.0,
+  minimization_method: "L-BFGS-B",
+};
+
+export const DEFAULT_MAXSPRT_CONFIG: MaxSPRTConfigSchema = {
+  enabled: false,
+  alpha: 0.05,
+  min_events: 3,
+  upper_limit: 50.0,
+  upper_rr_cap: 100.0,
+  model: "poisson",
+  expected_method: "mantel-haentzel",
+  method_alpha: 1.0,
+  critical_value: null,
+};
+
+export const DEFAULT_CUSUM_CONFIG: CUSUMConfigSchema = {
+  enabled: false,
+  target_rr: 2.0,
+  arl0: 500.0,
+  min_events: 3,
+  expected_method: "mantel-haentzel",
+  method_alpha: 1.0,
+  control_limit: null,
+};
+
 export const DEFAULT_ANALYSIS_REQUEST: RunAnalysisRequest = {
   prr: DEFAULT_PRR_CONFIG,
   ror: DEFAULT_ROR_CONFIG,
   rfet: DEFAULT_RFET_CONFIG,
   bcpnn: DEFAULT_BCPNN_CONFIG,
   gps: DEFAULT_GPS_CONFIG,
+  zigps: DEFAULT_ZIGPS_CONFIG,
   lasso: DEFAULT_LASSO_CONFIG,
   score_da: DEFAULT_SCORE_CONFIG,
+  score_ddi: DEFAULT_SCORE_DDI_CONFIG,
+  aegis: DEFAULT_AEGIS_CONFIG,
+  maxsprt: DEFAULT_MAXSPRT_CONFIG,
+  cusum: DEFAULT_CUSUM_CONFIG,
   consensus: true,
 };
 

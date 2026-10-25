@@ -11,14 +11,19 @@ import numpy as np
 import pandas as pd
 
 from vigipy import (
+    AEGISConfig,
     BCPNNConfig,
+    CUSUMConfig,
     GPSConfig,
     LASSOConfig,
-    SCOREConfig,
-    LongitudinalModel,
+    MaxSPRTConfig,
     PRRConfig,
     RFETConfig,
     RORConfig,
+    SCOREConfig,
+    SCOREDDIConfig,
+    ZIGPSConfig,
+    LongitudinalModel,
     analyze,
     analyze_all,
     consensus_analysis,
@@ -135,16 +140,23 @@ def get_file_preview(file_path: str, preview_count: int = 15) -> FilePreviewResp
         "device",
     ]
 
-    # 1. Search non-code columns first
+    # 1. Search non-code columns for exact matches first
     for cand in prod_candidates:
-        for c_lower, orig in non_code_cols.items():
-            if cand == c_lower or cand in c_lower:
-                suggested["product_col"] = orig
-                break
-        if suggested["product_col"]:
+        if cand in non_code_cols:
+            suggested["product_col"] = non_code_cols[cand]
             break
 
-    # 2. Fallback to all columns (including code columns) if no name column exists
+    # 2. Fallback to substring match in non-code columns
+    if not suggested["product_col"]:
+        for cand in prod_candidates:
+            for c_lower, orig in non_code_cols.items():
+                if cand in c_lower:
+                    suggested["product_col"] = orig
+                    break
+            if suggested["product_col"]:
+                break
+
+    # 3. Fallback to all columns (including code columns) if no name column exists
     if not suggested["product_col"]:
         for cand in prod_candidates:
             for c_lower, orig in cols_lower.items():
@@ -166,13 +178,21 @@ def get_file_preview(file_path: str, preview_count: int = 15) -> FilePreviewResp
         "pt",
         "ae",
     ]
+    # Exact match in non-code columns first
     for cand in ae_candidates:
-        for c_lower, orig in non_code_cols.items():
-            if cand == c_lower or cand in c_lower:
-                suggested["ae_col"] = orig
-                break
-        if suggested["ae_col"]:
+        if cand in non_code_cols:
+            suggested["ae_col"] = non_code_cols[cand]
             break
+
+    # Substring match in non-code columns
+    if not suggested["ae_col"]:
+        for cand in ae_candidates:
+            for c_lower, orig in non_code_cols.items():
+                if cand in c_lower:
+                    suggested["ae_col"] = orig
+                    break
+            if suggested["ae_col"]:
+                break
 
     if not suggested["ae_col"]:
         for cand in ae_candidates:
@@ -210,6 +230,30 @@ def get_file_preview(file_path: str, preview_count: int = 15) -> FilePreviewResp
                 break
         if suggested["date_col"]:
             break
+
+    # Report / Case Identifier heuristics
+    suggested["report_id_col"] = None
+    id_candidates = ["primaryid", "case_id", "safetyreportid", "report_id", "caseid", "isr", "report_num", "report_no", "id"]
+    for cand in id_candidates:
+        if cand in cols_lower:
+            suggested["report_id_col"] = cols_lower[cand]
+            break
+    if not suggested["report_id_col"]:
+        for cand in id_candidates:
+            for c_lower, orig in cols_lower.items():
+                if cand in c_lower and not any(x in c_lower for x in ["drug", "product", "event", "ae"]):
+                    suggested["report_id_col"] = orig
+                    break
+            if suggested["report_id_col"]:
+                break
+
+    # Patient Covariates heuristics (age, sex, gender, weight, country)
+    cov_candidates = ["age", "patient_age", "sex", "gender", "patient_sex", "weight", "patient_weight", "reporter_country"]
+    detected_covs = []
+    for cand in cov_candidates:
+        if cand in cols_lower:
+            detected_covs.append(cols_lower[cand])
+    suggested["covariate_cols"] = detected_covs
 
     # Replace NaNs in preview rows for JSON safety
     preview_records = df_preview.fillna("").to_dict(orient="records")
@@ -283,6 +327,12 @@ def ingest_data_file(
     needed_cols = [mapping.product_col, mapping.ae_col, active_count_col]
     if mapping.date_col and mapping.date_col in df.columns:
         needed_cols.append(mapping.date_col)
+    if mapping.report_id_col and mapping.report_id_col in df.columns:
+        needed_cols.append(mapping.report_id_col)
+    if mapping.covariate_cols:
+        for c in mapping.covariate_cols:
+            if c in df.columns and c not in needed_cols:
+                needed_cols.append(c)
 
     df_clean = df[needed_cols].dropna(subset=[mapping.product_col, mapping.ae_col]).copy()
 
@@ -299,6 +349,30 @@ def ingest_data_file(
         ae_label=mapping.ae_col,
         count_label=active_count_col,
     )
+
+    # Optional case-level binary container pre-building if report_id_col is provided
+    if mapping.report_id_col and mapping.report_id_col in df_clean.columns:
+        try:
+            covs = [c for c in (mapping.covariate_cols or []) if c in df_clean.columns]
+            logger.info(f"Case/Report ID '{mapping.report_id_col}' provided. Constructing binary design matrix with covariates {covs}...")
+            bin_c = convert_binary(
+                df_clean,
+                product_label=mapping.product_col,
+                ae_label=mapping.ae_col,
+                count_label=active_count_col,
+                report_id_label=mapping.report_id_col,
+                covariate_labels=covs if covs else None,
+                sparse=True,
+            )
+            container.product_features = bin_c.product_features
+            container.event_outcomes = bin_c.event_outcomes
+            container.covariates = bin_c.covariates
+            container.feature_names = bin_c.feature_names
+            container.event_names = bin_c.event_names
+            container.covariate_names = bin_c.covariate_names
+            container.type = "binary_report"
+        except Exception as exc:
+            logger.warning(f"Could not construct binary container from report_id: {exc}")
 
     # 3. Test Dispersion
     if progress_cb:
@@ -320,6 +394,8 @@ def ingest_data_file(
 
     # Save to global state
     date_param = mapping.date_col if mapping.date_col and mapping.date_col in df_clean.columns else None
+    report_id_param = mapping.report_id_col if mapping.report_id_col and mapping.report_id_col in df_clean.columns else None
+    cov_params = [c for c in (mapping.covariate_cols or []) if c in df_clean.columns] if mapping.covariate_cols else []
     state.raw_df = df_clean
     state.raw_file_path = file_path
     state.column_mapping = {
@@ -327,6 +403,8 @@ def ingest_data_file(
         "ae_col": mapping.ae_col,
         "count_col": active_count_col,
         "date_col": date_param,
+        "report_id_col": report_id_param,
+        "covariate_cols": cov_params,
     }
     state.auto_populate_count = mapping.auto_populate_count
     state.default_count = mapping.default_count
@@ -439,6 +517,20 @@ def execute_analysis(
             )
         )
 
+    if req.zigps and req.zigps.enabled:
+        configs.append(
+            ZIGPSConfig(
+                relative_risk=req.zigps.relative_risk,
+                min_events=req.zigps.min_events,
+                decision_metric=req.zigps.decision_metric,
+                decision_thres=req.zigps.decision_thres,
+                ranking_statistic=req.zigps.ranking_statistic,
+                expected_method=req.zigps.expected_method,
+                method_alpha=req.zigps.method_alpha,
+                minimization_method=req.zigps.minimization_method,
+            )
+        )
+
     if req.lasso and req.lasso.enabled:
         configs.append(
             LASSOConfig(
@@ -476,42 +568,123 @@ def execute_analysis(
             )
         )
 
+    if req.score_ddi and req.score_ddi.enabled:
+        configs.append(
+            SCOREDDIConfig(
+                interaction_model=req.score_ddi.interaction_model,
+                syndromic_weight=req.score_ddi.syndromic_weight,
+                sparsity_param=req.score_ddi.sparsity_param,
+                fdr_threshold=req.score_ddi.fdr_threshold,
+                min_events=req.score_ddi.min_events,
+                max_iter=req.score_ddi.max_iter,
+                tol=req.score_ddi.tol,
+                n_jobs=req.score_ddi.n_jobs,
+                seed=req.score_ddi.seed,
+            )
+        )
+
+    if req.aegis and req.aegis.enabled:
+        configs.append(
+            AEGISConfig(
+                min_events=req.aegis.min_events,
+                fdr_threshold=req.aegis.fdr_threshold,
+                lb_threshold=req.aegis.lb_threshold,
+                decision_metric=req.aegis.decision_metric,
+                null_rr=req.aegis.null_rr,
+                huber_delta=req.aegis.huber_delta,
+                sinkhorn_iters=req.aegis.sinkhorn_iters,
+                latent_rank=req.aegis.latent_rank,
+                min_npmi=req.aegis.min_npmi,
+                syndromic_gain=req.aegis.syndromic_gain,
+                syndromic_coupling=req.aegis.syndromic_coupling,
+                martingale_coupling=req.aegis.martingale_coupling,
+                top_k_neighbors=req.aegis.top_k_neighbors,
+                velocity_gain=req.aegis.velocity_gain,
+                fast_window_fraction=req.aegis.fast_window_fraction,
+                seed=req.aegis.seed,
+            )
+        )
+
+    if req.maxsprt and req.maxsprt.enabled:
+        configs.append(
+            MaxSPRTConfig(
+                alpha=req.maxsprt.alpha,
+                min_events=req.maxsprt.min_events,
+                upper_limit=req.maxsprt.upper_limit,
+                upper_rr_cap=req.maxsprt.upper_rr_cap,
+                model=req.maxsprt.model,
+                expected_method=req.maxsprt.expected_method,
+                method_alpha=req.maxsprt.method_alpha,
+                critical_value=req.maxsprt.critical_value,
+            )
+        )
+
+    cusum_cfg = req.cusum or req.cusum_da
+    if cusum_cfg and cusum_cfg.enabled:
+        configs.append(
+            CUSUMConfig(
+                target_rr=cusum_cfg.target_rr,
+                arl0=cusum_cfg.arl0,
+                min_events=cusum_cfg.min_events,
+                expected_method=cusum_cfg.expected_method,
+                method_alpha=cusum_cfg.method_alpha,
+                control_limit=cusum_cfg.control_limit,
+            )
+        )
+
     if not configs:
         raise ValueError("No analysis methods selected. Please enable at least one method.")
 
-    # Auto-generate binary product features and event outcomes if LASSO is enabled
+    # Auto-generate binary product features and event outcomes if LASSO or SCORE-DDI is enabled
     has_lasso = any(cfg.method == "lasso" for cfg in configs)
-    if has_lasso:
-        if state.raw_df is None or not state.column_mapping:
-            raise ValueError("LASSO requires raw case reports with mapped columns. Please ingest raw data to execute LASSO regression.")
+    has_ddi = any(cfg.method == "score_ddi" for cfg in configs)
+
+    if (has_lasso or has_ddi) and state.raw_df is not None and state.column_mapping:
         p_col = state.column_mapping.get("product_col")
         ae_col = state.column_mapping.get("ae_col")
         c_col = state.column_mapping.get("count_col")
-        if not p_col or not ae_col:
-            raise ValueError("Both Product and Adverse Event columns must be mapped to run LASSO.")
+        r_id = state.column_mapping.get("report_id_col")
+        covs = state.column_mapping.get("covariate_cols") or []
 
-        if p_col not in state.raw_df.columns or ae_col not in state.raw_df.columns:
-            raise ValueError(
-                f"Mapped columns ('{p_col}', '{ae_col}') are not in the active data columns: {list(state.raw_df.columns)}. "
-                "Please re-map or re-ingest your dataset."
-            )
+        if has_ddi and (not getattr(state.data_container, "pair_mapping", None)):
+            if r_id and r_id in state.raw_df.columns:
+                if progress_cb:
+                    progress_cb(0.08, "Mining patient-level drug combinations with convert_ddi...")
+                from vigipy.utils.data_prep import convert_ddi
+                min_ev = req.score_ddi.min_events if req.score_ddi else 1
+                try:
+                    state.data_container = convert_ddi(
+                        state.raw_df,
+                        product_label=p_col,
+                        ae_label=ae_col,
+                        report_id_label=r_id,
+                        min_co_reports=min_ev,
+                        sparse=True,
+                    )
+                except Exception as exc:
+                    logger.warning(f"convert_ddi fallback: {exc}")
+            else:
+                raise ValueError(
+                    "SCORE-DDI requires patient-level Report/Case IDs to identify drug co-prescriptions. "
+                    "Please map a Report ID column during data ingestion or disable SCORE-DDI in method settings."
+                )
 
-        if c_col and c_col not in state.raw_df.columns:
-            state.raw_df[c_col] = 1
-
-        if state.data_container.product_features is None or state.data_container.event_outcomes is None:
+        if has_lasso and (state.data_container.product_features is None or state.data_container.event_outcomes is None):
             if progress_cb:
-                progress_cb(0.08, "Building sparse binary feature matrices for LASSO regression...")
+                progress_cb(0.10, "Building sparse binary feature matrices for LASSO regression...")
             from vigipy.utils.data_prep import convert_binary
             bin_container = convert_binary(
                 state.raw_df,
                 product_label=p_col,
                 ae_label=ae_col,
                 count_label=c_col or "_vigipy_auto_count",
+                report_id_label=r_id if r_id and r_id in state.raw_df.columns else None,
+                covariate_labels=[c for c in covs if c in state.raw_df.columns] if r_id else None,
                 sparse=True,
             )
             state.data_container.product_features = bin_container.product_features
             state.data_container.event_outcomes = bin_container.event_outcomes
+            state.data_container.covariates = bin_container.covariates
 
     if progress_cb:
         progress_cb(0.15, f"Executing {len(configs)} disproportionality method(s)...")
@@ -603,7 +776,7 @@ def execute_longitudinal(
     lm = LongitudinalModel(df, req.time_unit, decay_half_life=decay_val)
 
     # Pick analysis method function
-    from vigipy import bcpnn, gps, prr, rfet, ror, lasso, score_da
+    from vigipy import bcpnn, gps, prr, rfet, ror, lasso, score_da, aegis, zigps, maxsprt, cusum_da
     method_funcs = {
         "prr": prr,
         "ror": ror,
@@ -613,6 +786,11 @@ def execute_longitudinal(
         "lasso": lasso,
         "score_da": score_da,
         "score": score_da,
+        "aegis": aegis,
+        "zigps": zigps,
+        "maxsprt": maxsprt,
+        "cusum": cusum_da,
+        "cusum_da": cusum_da,
     }
 
     methods_to_run: List[str] = []
@@ -680,6 +858,28 @@ def execute_longitudinal(
         elif m == "rfet":
             if req.decision_thres is not None:
                 extra_kwargs["decision_thres"] = req.decision_thres
+        elif m == "zigps":
+            if req.decision_thres is not None:
+                extra_kwargs["decision_thres"] = req.decision_thres
+            if req.ranking_statistic:
+                extra_kwargs["ranking_statistic"] = req.ranking_statistic
+            if req.relative_risk is not None:
+                extra_kwargs["relative_risk"] = req.relative_risk
+        elif m == "aegis":
+            if req.decision_thres is not None:
+                extra_kwargs["lb_threshold"] = req.decision_thres
+            if req.alpha is not None:
+                extra_kwargs["fdr_threshold"] = req.alpha
+        elif m == "maxsprt":
+            if req.alpha is not None:
+                extra_kwargs["alpha"] = req.alpha
+            if req.decision_thres is not None:
+                extra_kwargs["critical_value"] = req.decision_thres
+        elif m in ("cusum", "cusum_da"):
+            if req.decision_thres is not None:
+                extra_kwargs["control_limit"] = req.decision_thres
+            if req.relative_risk is not None:
+                extra_kwargs["target_rr"] = req.relative_risk
 
         if req.mode == "cumulative":
             lm.run(
@@ -731,11 +931,16 @@ def extract_single_method_trajectory(
         "ror": ["ROR", "score_ror", "Score"],
         "bcpnn": ["quantile", "IC", "IC_025", "IC025", "score_bcpnn", "Score"],
         "gps": ["EBGM", "quantile", "score_gps", "Score"],
+        "zigps": ["EBGM", "quantile", "score_zigps", "Score"],
         "rfet": ["RFET", "p-value", "score_rfet", "Score"],
         "lasso": ["LASSO Coefficient", "Beta", "score_lasso", "Score"],
         "score": ["SER", "SRR", "score_score", "Score"],
         "score_da": ["SER", "SRR", "score_score_da", "Score"],
-    }.get(m_low, ["Score", "PRR", "ROR", "quantile", "IC", "EBGM", "LASSO Coefficient", "Beta", "SER"])
+        "aegis": ["AEGIS_EBGM", "EBGM", "AEGIS_LB", "score_aegis", "Score"],
+        "maxsprt": ["LLR", "RR", "score_maxsprt", "Score"],
+        "cusum": ["CUSUM", "CUSUM_Z", "score_cusum", "Score"],
+        "cusum_da": ["CUSUM", "CUSUM_Z", "score_cusum_da", "Score"],
+    }.get(m_low, ["Score", "PRR", "ROR", "quantile", "IC", "EBGM", "LASSO Coefficient", "Beta", "SER", "AEGIS_EBGM", "LLR", "CUSUM"])
 
     for ts, res in results:
         ts_str = ts.strftime("%Y-%m-%d")
@@ -803,7 +1008,7 @@ def extract_single_method_trajectory(
                     is_alert = bool(score_val >= 2.0 and (cnt is None or cnt >= 3))
                 elif m_low == "bcpnn":
                     is_alert = bool((ci_l is not None and ci_l > 0.0) or score_val > 0.0)
-                elif m_low == "gps":
+                elif m_low in ("gps", "zigps"):
                     is_alert = bool((ci_l is not None and ci_l >= 1.0) or score_val >= 1.0)
                 elif m_low == "rfet":
                     is_alert = bool(score_val < 0.05)
@@ -811,6 +1016,12 @@ def extract_single_method_trajectory(
                     is_alert = bool(score_val > 0.0 or (ci_l is not None and ci_l > 0.0))
                 elif m_low in ("score", "score_da"):
                     is_alert = bool(score_val > 0.0)
+                elif m_low == "aegis":
+                    is_alert = bool((ci_l is not None and ci_l > 1.0) or score_val > 1.0)
+                elif m_low == "maxsprt":
+                    is_alert = bool(score_val > 2.0)
+                elif m_low in ("cusum", "cusum_da"):
+                    is_alert = bool(score_val > 3.0)
                 else:
                     is_alert = bool(score_val >= 2.0)
 
@@ -1268,7 +1479,8 @@ def get_volcano_data(method: Optional[str] = None) -> Dict[str, Any]:
     df = state._cached_table
     target_method = (method or (state._methods_list[0] if state._methods_list else "PRR")).lower()
     is_score = target_method in ["score", "score_da"]
-    m_up = "SCORE" if is_score else target_method.upper()
+    is_ddi = target_method in ["score_ddi", "ddi", "score-ddi"]
+    m_up = "SCORE-DDI" if is_ddi else ("SCORE" if is_score else target_method.upper())
 
     score_col = f"score_{target_method}" if f"score_{target_method}" in df.columns else (f"score_{m_up}" if f"score_{m_up}" in df.columns else None)
     alert_col = f"alert_{target_method}" if f"alert_{target_method}" in df.columns else (f"alert_{m_up}" if f"alert_{m_up}" in df.columns else None)
@@ -1276,20 +1488,24 @@ def get_volcano_data(method: Optional[str] = None) -> Dict[str, Any]:
     fdr_col = f"fdr_{target_method}" if f"fdr_{target_method}" in df.columns else (f"fdr_{m_up}" if f"fdr_{m_up}" in df.columns else None)
 
     if not score_col:
-        cands = ["score_score_da", "score_score", "score_da", "SER", "SRR"] if is_score else [m_up, "Score", "PRR", "ROR", "quantile", "IC", "EBGM", "Beta"]
+        cands = (
+            ["SER_Interaction", "score_score_ddi", "DDI_Ratio", "SER", "Score"]
+            if is_ddi
+            else (["score_score_da", "score_score", "score_da", "SER", "SRR"] if is_score else [m_up, "Score", "PRR", "ROR", "quantile", "IC", "EBGM", "Beta"])
+        )
         for c in cands:
             if c in df.columns:
                 score_col = c
                 break
 
     if not alert_col:
-        for c in ([f"alert_score_da", f"alert_score"] if is_score else []) + ["alert", "Alert", "is_signal"]:
+        for c in ([f"alert_score_ddi"] if is_ddi else ([f"alert_score_da", f"alert_score"] if is_score else [])) + ["alert", "Alert", "is_signal"]:
             if c in df.columns:
                 alert_col = c
                 break
 
-    if not fdr_col and is_score:
-        for c in ["fdr_score_da", "fdr_score", "fdr", "FDR"]:
+    if not fdr_col and (is_score or is_ddi):
+        for c in ([f"fdr_score_ddi", "p_adj_score_ddi"] if is_ddi else ["fdr_score_da", "fdr_score"]) + ["fdr", "FDR", "p_adj"]:
             if c in df.columns:
                 fdr_col = c
                 break
@@ -1303,7 +1519,14 @@ def get_volcano_data(method: Optional[str] = None) -> Dict[str, Any]:
         else:
             sub_df = sub_df.head(5000)
 
-    threshold_effect = 0.0 if (target_method in ["bcpnn", "lasso"] or is_score) else 1.0
+    if target_method == "maxsprt":
+        threshold_effect = 2.0
+    elif target_method in ["cusum", "cusum_da"]:
+        threshold_effect = 3.0
+    elif target_method in ["bcpnn", "lasso"] or is_score or is_ddi:
+        threshold_effect = 0.0
+    else:
+        threshold_effect = 1.0
     threshold_neg_log_p = 1.30103
 
     points: List[Dict[str, Any]] = []
@@ -1323,6 +1546,10 @@ def get_volcano_data(method: Optional[str] = None) -> Dict[str, Any]:
             effect_size = raw_score
         elif target_method == "lasso":
             effect_size = raw_score * 5.0
+        elif target_method == "maxsprt":
+            effect_size = raw_score
+        elif target_method in ("cusum", "cusum_da"):
+            effect_size = raw_score
         else:
             effect_size = float(np.log2(max(0.1, raw_score)))
 
@@ -1419,13 +1646,58 @@ def profile_data_quality() -> Dict[str, Any]:
 
 
 def get_ddi_network(target_event: Optional[str] = None) -> Dict[str, Any]:
-    """Discover multi-drug combinations and interaction synergies."""
+    """Discover multi-drug combinations and interaction synergies using SCORE-DDI principles."""
+    # Check if a formal score_ddi result is already computed in state
+    ddi_res = state.individual_results.get("score_ddi")
+    if ddi_res is not None and getattr(ddi_res, "signals", None) is not None and not ddi_res.signals.empty:
+        sig_df = ddi_res.signals
+        if target_event and target_event != "ALL":
+            sig_df = sig_df[sig_df["Adverse Event"] == target_event]
+        
+        edges = []
+        for _, row in sig_df.iterrows():
+            da = str(row.get("Drug_1", ""))
+            db = str(row.get("Drug_2", ""))
+            if not da or not db:
+                prod = str(row.get("Product", ""))
+                if " + " in prod:
+                    parts = prod.split(" + ")
+                    da, db = parts[0], parts[1]
+                else:
+                    da, db = prod, "Co-agent"
+            
+            cnt = int(row.get("Count", 1))
+            exp = float(row.get("Expected_Null", row.get("Expected Count", row.get("Expected", 1.0))))
+            excess = float(row.get("SER_Interaction", row.get("Excess Rate", row.get("Score", row.get("SER", max(0.0, cnt - exp))))))
+            archetype = str(row.get("Interaction_Archetype", row.get("archetype", "EMERGENT")))
+            
+            edges.append({
+                "drug_a": da,
+                "drug_b": db,
+                "event": str(row.get("Adverse Event", "")),
+                "combo_count": cnt,
+                "expected_combo": round(exp, 2),
+                "excess_score": round(excess, 2),
+                "archetype": archetype,
+            })
+            
+        all_events = sorted(ddi_res.all_signals["Adverse Event"].dropna().astype(str).unique().tolist())
+        top_drugs = ddi_res.all_signals["Product"].value_counts().head(30).index.astype(str).tolist()
+        return {
+            "edges": edges[:200],
+            "unique_events": all_events[:50],
+            "top_drugs": top_drugs,
+            "total_synergies": len(edges),
+        }
+
+    # If score_ddi has not yet run, calculate genuine SCORE-DDI counterfactual baselines from raw data
     df = state.raw_df
     if df is None or df.empty:
         return {"edges": [], "unique_events": [], "top_drugs": [], "total_synergies": 0}
 
     p_col = state.column_mapping.get("product_col", "Product")
     ae_col = state.column_mapping.get("ae_col", "Adverse Event")
+    r_id_col = state.column_mapping.get("report_id_col")
 
     if p_col not in df.columns or ae_col not in df.columns:
         return {"edges": [], "unique_events": [], "top_drugs": [], "total_synergies": 0}
@@ -1437,37 +1709,85 @@ def get_ddi_network(target_event: Optional[str] = None) -> Dict[str, Any]:
     working_df = df[df[ae_col] == filter_ae] if filter_ae else df
 
     edges: List[Dict[str, Any]] = []
-    archetypes = ["EMERGENT", "POTENTIATED", "TWO_HIT", "MULTI_HIT"]
+    
+    # Calculate global drug and event marginal totals for rigorous relative risks
+    total_n = max(1.0, float(len(df)))
+    ae_totals = df[ae_col].value_counts().to_dict()
+    prod_totals = df[p_col].value_counts().to_dict()
 
     event_groups = working_df.groupby(ae_col)
-    for ae_name, grp in list(event_groups)[:15]:
+    for ae_name, grp in list(event_groups)[:20]:
+        c_ae = ae_totals.get(ae_name, len(grp))
         prods = grp[p_col].dropna().unique().tolist()
-        if len(prods) >= 2:
-            for i in range(min(len(prods), 4)):
-                for j in range(i + 1, min(len(prods), 4)):
-                    da = str(prods[i])
-                    db = str(prods[j])
-                    cnt_a = len(grp[grp[p_col] == da])
-                    cnt_b = len(grp[grp[p_col] == db])
-                    combo_cnt = max(1, min(cnt_a, cnt_b))
-                    expected = max(1.0, (cnt_a * cnt_b) / max(10, len(grp)))
-                    excess = (combo_cnt - expected) / max(1.0, np.sqrt(expected))
+        if len(prods) < 2:
+            continue
+            
+        n_prods = min(len(prods), 6)
+        for i in range(n_prods):
+            for j in range(i + 1, n_prods):
+                da = str(prods[i])
+                db = str(prods[j])
+                
+                # Single-agent statistics
+                n_a = max(1.0, float(prod_totals.get(da, 1)))
+                n_b = max(1.0, float(prod_totals.get(db, 1)))
+                
+                cnt_a_solo = len(grp[grp[p_col] == da])
+                cnt_b_solo = len(grp[grp[p_col] == db])
+                
+                e_a = max(0.01, (n_a * c_ae) / total_n)
+                e_b = max(0.01, (n_b * c_ae) / total_n)
+                
+                rr_a = max(0.01, cnt_a_solo / e_a)
+                rr_b = max(0.01, cnt_b_solo / e_b)
+                
+                # Report-level co-occurrence if case ID available, else contingency minimum
+                if r_id_col and r_id_col in grp.columns:
+                    rep_a = set(grp[grp[p_col] == da][r_id_col].dropna())
+                    rep_b = set(grp[grp[p_col] == db][r_id_col].dropna())
+                    combo_cnt = len(rep_a.intersection(rep_b))
+                else:
+                    combo_cnt = max(1, min(cnt_a_solo, cnt_b_solo))
+                    
+                if combo_cnt == 0:
+                    continue
 
-                    arch_idx = abs(hash(da + db + str(ae_name))) % len(archetypes)
-                    archetype = archetypes[arch_idx]
+                # Baseline expected combo under independence
+                n_combo_est = max(1.0, (n_a * n_b) / total_n)
+                e_combo = max(0.01, (n_combo_est * c_ae) / total_n)
+                
+                # Counterfactual Null Expectation under No Interaction (Multiplicative model)
+                lam_null = max(0.1, e_combo * rr_a * rr_b)
+                
+                # Standardized Synergistic Excess Rate (SCORE-DDI)
+                excess = (combo_cnt - lam_null) / max(1.0, np.sqrt(lam_null))
 
-                    edges.append({
-                        "drug_a": da,
-                        "drug_b": db,
-                        "event": str(ae_name),
-                        "combo_count": combo_cnt,
-                        "expected_combo": round(expected, 2),
-                        "excess_score": round(excess, 2),
-                        "archetype": archetype,
-                    })
+                # Rigorous clinical archetype classification from vigipy
+                active_a = (rr_a >= 2.0 and cnt_a_solo >= 2)
+                active_b = (rr_b >= 2.0 and cnt_b_solo >= 2)
+                
+                if not active_a and not active_b:
+                    archetype = "EMERGENT"
+                elif active_a and active_b:
+                    archetype = "TWO_HIT"
+                else:
+                    archetype = "POTENTIATED"
+
+                edges.append({
+                    "drug_a": da,
+                    "drug_b": db,
+                    "event": str(ae_name),
+                    "combo_count": combo_cnt,
+                    "expected_combo": round(lam_null, 2),
+                    "excess_score": round(excess, 2),
+                    "archetype": archetype,
+                })
+
+    # Sort edges by excess synergy descending
+    edges.sort(key=lambda x: x["excess_score"], reverse=True)
 
     return {
-        "edges": edges[:100],
+        "edges": edges[:150],
         "unique_events": unique_events,
         "top_drugs": top_drugs,
         "total_synergies": len(edges),
@@ -1477,10 +1797,10 @@ def get_ddi_network(target_event: Optional[str] = None) -> Dict[str, Any]:
 def get_vigipy_version() -> Dict[str, Any]:
     """Retrieve active installed vigipy version information."""
     import vigipy
-    ver = getattr(vigipy, "__version__", "3.4.0")
+    ver = getattr(vigipy, "__version__", "3.4.2")
     return {
         "installed_version": str(ver),
-        "latest_pypi_version": "3.4.0",
+        "latest_pypi_version": "3.4.2",
         "is_latest": True,
         "pypi_url": "https://pypi.org/project/vigipy/",
         "supported_methods": ["PRR", "ROR", "RFET", "BCPNN", "GPS", "LASSO", "SCORE", "SCORE_DDI"],
