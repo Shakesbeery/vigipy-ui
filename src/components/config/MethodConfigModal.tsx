@@ -13,6 +13,8 @@ import {
   Activity,
   ShieldAlert,
   Zap,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   RunAnalysisRequest,
@@ -21,16 +23,26 @@ import {
   RFETConfigSchema,
   BCPNNConfigSchema,
   GPSConfigSchema,
+  ZIGPSConfigSchema,
   LASSOConfigSchema,
   SCOREConfigSchema,
+  SCOREDDIConfigSchema,
+  AEGISConfigSchema,
+  MaxSPRTConfigSchema,
+  CUSUMConfigSchema,
   DEFAULT_ANALYSIS_REQUEST,
   DEFAULT_PRR_CONFIG,
   DEFAULT_ROR_CONFIG,
   DEFAULT_RFET_CONFIG,
   DEFAULT_BCPNN_CONFIG,
   DEFAULT_GPS_CONFIG,
+  DEFAULT_ZIGPS_CONFIG,
   DEFAULT_LASSO_CONFIG,
   DEFAULT_SCORE_CONFIG,
+  DEFAULT_SCORE_DDI_CONFIG,
+  DEFAULT_AEGIS_CONFIG,
+  DEFAULT_MAXSPRT_CONFIG,
+  DEFAULT_CUSUM_CONFIG,
   ExpectedMethod,
   DecisionMetric,
 } from "../../types";
@@ -44,7 +56,20 @@ export interface MethodConfigModalProps {
   isAnalyzing?: boolean;
 }
 
-type MethodTab = "consensus" | "prr" | "ror" | "rfet" | "bcpnn" | "gps" | "lasso" | "score_da";
+type MethodTab =
+  | "consensus"
+  | "prr"
+  | "ror"
+  | "rfet"
+  | "bcpnn"
+  | "gps"
+  | "zigps"
+  | "lasso"
+  | "score_da"
+  | "aegis"
+  | "score_ddi"
+  | "maxsprt"
+  | "cusum";
 
 export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
   isOpen,
@@ -56,6 +81,7 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
 }) => {
   // State for each method
   const [activeTab, setActiveTab] = useState<MethodTab>("consensus");
+  const [showAdvancedParams, setShowAdvancedParams] = useState<boolean>(false);
   const [consensus, setConsensus] = useState<boolean>(
     initialConfig?.consensus ?? DEFAULT_ANALYSIS_REQUEST.consensus
   );
@@ -75,11 +101,26 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
   const [gps, setGps] = useState<GPSConfigSchema>(
     initialConfig?.gps || { ...DEFAULT_GPS_CONFIG }
   );
+  const [zigps, setZigps] = useState<ZIGPSConfigSchema>(
+    initialConfig?.zigps || { ...DEFAULT_ZIGPS_CONFIG }
+  );
   const [lasso, setLasso] = useState<LASSOConfigSchema>(
     initialConfig?.lasso || { ...DEFAULT_LASSO_CONFIG }
   );
   const [scoreDa, setScoreDa] = useState<SCOREConfigSchema>(
     initialConfig?.score_da || initialConfig?.score || { ...DEFAULT_SCORE_CONFIG }
+  );
+  const [scoreDdi, setScoreDdi] = useState<SCOREDDIConfigSchema>(
+    initialConfig?.score_ddi || { ...DEFAULT_SCORE_DDI_CONFIG }
+  );
+  const [aegis, setAegis] = useState<AEGISConfigSchema>(
+    initialConfig?.aegis || { ...DEFAULT_AEGIS_CONFIG }
+  );
+  const [maxsprt, setMaxsprt] = useState<MaxSPRTConfigSchema>(
+    initialConfig?.maxsprt || { ...DEFAULT_MAXSPRT_CONFIG }
+  );
+  const [cusum, setCusum] = useState<CUSUMConfigSchema>(
+    initialConfig?.cusum || initialConfig?.cusum_da || { ...DEFAULT_CUSUM_CONFIG }
   );
 
   // Sync state if initialConfig changes
@@ -90,9 +131,15 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
       if (initialConfig.rfet !== undefined && initialConfig.rfet !== null) setRfet({ ...initialConfig.rfet });
       if (initialConfig.bcpnn !== undefined && initialConfig.bcpnn !== null) setBcpnn({ ...initialConfig.bcpnn });
       if (initialConfig.gps !== undefined && initialConfig.gps !== null) setGps({ ...initialConfig.gps });
+      if (initialConfig.zigps !== undefined && initialConfig.zigps !== null) setZigps({ ...initialConfig.zigps });
       if (initialConfig.lasso !== undefined && initialConfig.lasso !== null) setLasso({ ...initialConfig.lasso });
       if (initialConfig.score_da !== undefined && initialConfig.score_da !== null) setScoreDa({ ...initialConfig.score_da });
       else if (initialConfig.score !== undefined && initialConfig.score !== null) setScoreDa({ ...initialConfig.score });
+      if (initialConfig.score_ddi !== undefined && initialConfig.score_ddi !== null) setScoreDdi({ ...initialConfig.score_ddi });
+      if (initialConfig.aegis !== undefined && initialConfig.aegis !== null) setAegis({ ...initialConfig.aegis });
+      if (initialConfig.maxsprt !== undefined && initialConfig.maxsprt !== null) setMaxsprt({ ...initialConfig.maxsprt });
+      if (initialConfig.cusum !== undefined && initialConfig.cusum !== null) setCusum({ ...initialConfig.cusum });
+      else if (initialConfig.cusum_da !== undefined && initialConfig.cusum_da !== null) setCusum({ ...initialConfig.cusum_da });
       if (initialConfig.consensus !== undefined && initialConfig.consensus !== null) setConsensus(initialConfig.consensus);
     }
   }, [initialConfig]);
@@ -106,12 +153,17 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
     rfet.enabled,
     bcpnn.enabled,
     gps.enabled,
+    zigps.enabled,
     lasso.enabled,
     scoreDa.enabled,
+    scoreDdi.enabled,
+    aegis.enabled,
+    maxsprt.enabled,
+    cusum.enabled,
   ].filter(Boolean).length;
 
   // Preset Configurations
-  const applyPreset = (presetName: "fda" | "ema" | "all" | "core") => {
+  const applyPreset = (presetName: "fda" | "ema" | "all" | "core" | "synergy" | "modern" | "sequential") => {
     switch (presetName) {
       case "fda":
         setPrr((p) => ({ ...p, enabled: true }));
@@ -119,8 +171,13 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
         setRfet((p) => ({ ...p, enabled: false }));
         setBcpnn((p) => ({ ...p, enabled: false }));
         setGps((p) => ({ ...p, enabled: true }));
+        setZigps((p) => ({ ...p, enabled: false }));
         setLasso((p) => ({ ...p, enabled: false }));
         setScoreDa((p) => ({ ...p, enabled: false }));
+        setScoreDdi((p) => ({ ...p, enabled: false }));
+        setAegis((p) => ({ ...p, enabled: false }));
+        setMaxsprt((p) => ({ ...p, enabled: false }));
+        setCusum((p) => ({ ...p, enabled: false }));
         setConsensus(true);
         break;
       case "ema":
@@ -129,8 +186,13 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
         setRfet((p) => ({ ...p, enabled: false }));
         setBcpnn((p) => ({ ...p, enabled: true }));
         setGps((p) => ({ ...p, enabled: false }));
+        setZigps((p) => ({ ...p, enabled: false }));
         setLasso((p) => ({ ...p, enabled: false }));
         setScoreDa((p) => ({ ...p, enabled: false }));
+        setScoreDdi((p) => ({ ...p, enabled: false }));
+        setAegis((p) => ({ ...p, enabled: false }));
+        setMaxsprt((p) => ({ ...p, enabled: false }));
+        setCusum((p) => ({ ...p, enabled: false }));
         setConsensus(true);
         break;
       case "core":
@@ -139,8 +201,58 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
         setRfet((p) => ({ ...p, enabled: true }));
         setBcpnn((p) => ({ ...p, enabled: true }));
         setGps((p) => ({ ...p, enabled: true }));
+        setZigps((p) => ({ ...p, enabled: false }));
         setLasso((p) => ({ ...p, enabled: false }));
         setScoreDa((p) => ({ ...p, enabled: false }));
+        setScoreDdi((p) => ({ ...p, enabled: false }));
+        setAegis((p) => ({ ...p, enabled: false }));
+        setMaxsprt((p) => ({ ...p, enabled: false }));
+        setCusum((p) => ({ ...p, enabled: false }));
+        setConsensus(true);
+        break;
+      case "modern":
+        setPrr((p) => ({ ...p, enabled: true }));
+        setRor((p) => ({ ...p, enabled: false }));
+        setRfet((p) => ({ ...p, enabled: false }));
+        setBcpnn((p) => ({ ...p, enabled: false }));
+        setGps((p) => ({ ...p, enabled: false }));
+        setZigps((p) => ({ ...p, enabled: true }));
+        setLasso((p) => ({ ...p, enabled: false }));
+        setScoreDa((p) => ({ ...p, enabled: true }));
+        setScoreDdi((p) => ({ ...p, enabled: false }));
+        setAegis((p) => ({ ...p, enabled: true }));
+        setMaxsprt((p) => ({ ...p, enabled: false }));
+        setCusum((p) => ({ ...p, enabled: false }));
+        setConsensus(true);
+        break;
+      case "sequential":
+        setPrr((p) => ({ ...p, enabled: false }));
+        setRor((p) => ({ ...p, enabled: false }));
+        setRfet((p) => ({ ...p, enabled: false }));
+        setBcpnn((p) => ({ ...p, enabled: false }));
+        setGps((p) => ({ ...p, enabled: false }));
+        setZigps((p) => ({ ...p, enabled: false }));
+        setLasso((p) => ({ ...p, enabled: false }));
+        setScoreDa((p) => ({ ...p, enabled: false }));
+        setScoreDdi((p) => ({ ...p, enabled: false }));
+        setAegis((p) => ({ ...p, enabled: false }));
+        setMaxsprt((p) => ({ ...p, enabled: true }));
+        setCusum((p) => ({ ...p, enabled: true }));
+        setConsensus(true);
+        break;
+      case "synergy":
+        setPrr((p) => ({ ...p, enabled: false }));
+        setRor((p) => ({ ...p, enabled: false }));
+        setRfet((p) => ({ ...p, enabled: false }));
+        setBcpnn((p) => ({ ...p, enabled: false }));
+        setGps((p) => ({ ...p, enabled: false }));
+        setZigps((p) => ({ ...p, enabled: false }));
+        setLasso((p) => ({ ...p, enabled: true }));
+        setScoreDa((p) => ({ ...p, enabled: true }));
+        setScoreDdi((p) => ({ ...p, enabled: true }));
+        setAegis((p) => ({ ...p, enabled: false }));
+        setMaxsprt((p) => ({ ...p, enabled: false }));
+        setCusum((p) => ({ ...p, enabled: false }));
         setConsensus(true);
         break;
       case "all":
@@ -149,8 +261,13 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
         setRfet((p) => ({ ...p, enabled: true }));
         setBcpnn((p) => ({ ...p, enabled: true }));
         setGps((p) => ({ ...p, enabled: true }));
+        setZigps((p) => ({ ...p, enabled: true }));
         setLasso((p) => ({ ...p, enabled: true }));
         setScoreDa((p) => ({ ...p, enabled: true }));
+        setScoreDdi((p) => ({ ...p, enabled: true }));
+        setAegis((p) => ({ ...p, enabled: true }));
+        setMaxsprt((p) => ({ ...p, enabled: true }));
+        setCusum((p) => ({ ...p, enabled: true }));
         setConsensus(true);
         break;
     }
@@ -162,8 +279,13 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
     setRfet({ ...DEFAULT_RFET_CONFIG });
     setBcpnn({ ...DEFAULT_BCPNN_CONFIG });
     setGps({ ...DEFAULT_GPS_CONFIG });
+    setZigps({ ...DEFAULT_ZIGPS_CONFIG });
     setLasso({ ...DEFAULT_LASSO_CONFIG });
     setScoreDa({ ...DEFAULT_SCORE_CONFIG });
+    setScoreDdi({ ...DEFAULT_SCORE_DDI_CONFIG });
+    setAegis({ ...DEFAULT_AEGIS_CONFIG });
+    setMaxsprt({ ...DEFAULT_MAXSPRT_CONFIG });
+    setCusum({ ...DEFAULT_CUSUM_CONFIG });
     setConsensus(true);
   };
 
@@ -173,8 +295,13 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
     rfet: { ...rfet },
     bcpnn: { ...bcpnn },
     gps: { ...gps },
+    zigps: { ...zigps },
     lasso: { ...lasso },
     score_da: { ...scoreDa },
+    score_ddi: { ...scoreDdi },
+    aegis: { ...aegis },
+    maxsprt: { ...maxsprt },
+    cusum: { ...cusum },
     consensus,
   });
 
@@ -256,11 +383,18 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
               Core Suite (5 Methods)
             </button>
             <button
+              onClick={() => applyPreset("synergy")}
+              className="px-2.5 py-1 rounded-md text-xs font-mono bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
+              title="SCORE-DA, SCORE-DDI, and Relaxed LASSO for high-dimensional polypharmacy discovery"
+            >
+              Syndromic & Polypharmacy
+            </button>
+            <button
               onClick={() => applyPreset("all")}
               className="px-2.5 py-1 rounded-md text-xs font-mono bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
-              title="All 7 methods including LASSO and SCORE-DA"
+              title="All 8 methods including LASSO, SCORE-DA, and SCORE-DDI"
             >
-              All 7 Methods
+              All 8 Methods
             </button>
           </div>
 
@@ -311,8 +445,9 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
               </button>
             </div>
 
-            <div className="pt-2 pb-1 px-2 text-[10px] font-mono uppercase tracking-wider text-slate-500">
-              Disproportionality Methods
+            {/* Category: Frequentist Disproportionality */}
+            <div className="pt-2 pb-1 px-2 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">
+              Frequentist DA
             </div>
 
             {/* PRR */}
@@ -348,6 +483,11 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
               onToggle={(val) => setRfet((p) => ({ ...p, enabled: val }))}
             />
 
+            {/* Category: Bayesian Shrinkage */}
+            <div className="pt-3 pb-1 px-2 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">
+              Bayesian Shrinkage
+            </div>
+
             {/* BCPNN */}
             <MethodTabButton
               tabKey="bcpnn"
@@ -370,6 +510,22 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
               onToggle={(val) => setGps((p) => ({ ...p, enabled: val }))}
             />
 
+            {/* ZIGPS */}
+            <MethodTabButton
+              tabKey="zigps"
+              label="ZIGPS"
+              sub="Zero-Inflated GPS"
+              enabled={zigps.enabled}
+              active={activeTab === "zigps"}
+              onClick={() => setActiveTab("zigps")}
+              onToggle={(val) => setZigps((p) => ({ ...p, enabled: val }))}
+            />
+
+            {/* Category: Indication & Confounding Adjustment */}
+            <div className="pt-3 pb-1 px-2 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">
+              Indication & Unmasking
+            </div>
+
             {/* LASSO */}
             <MethodTabButton
               tabKey="lasso"
@@ -390,6 +546,60 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
               active={activeTab === "score_da"}
               onClick={() => setActiveTab("score_da")}
               onToggle={(val) => setScoreDa((p) => ({ ...p, enabled: val }))}
+            />
+
+            {/* AEGIS */}
+            <MethodTabButton
+              tabKey="aegis"
+              label="AEGIS"
+              sub="LOCO Graph Unmasking"
+              enabled={aegis.enabled}
+              active={activeTab === "aegis"}
+              onClick={() => setActiveTab("aegis")}
+              onToggle={(val) => setAegis((p) => ({ ...p, enabled: val }))}
+            />
+
+            {/* Category: Combinations & Interaction */}
+            <div className="pt-3 pb-1 px-2 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">
+              Combinations & DDI
+            </div>
+
+            {/* SCORE-DDI */}
+            <MethodTabButton
+              tabKey="score_ddi"
+              label="SCORE-DDI"
+              sub="Multi-Drug Synergy"
+              enabled={scoreDdi.enabled}
+              active={activeTab === "score_ddi"}
+              onClick={() => setActiveTab("score_ddi")}
+              onToggle={(val) => setScoreDdi((p) => ({ ...p, enabled: val }))}
+            />
+
+            {/* Category: Sequential Surveillance */}
+            <div className="pt-3 pb-1 px-2 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">
+              Sequential Surveillance
+            </div>
+
+            {/* MaxSPRT */}
+            <MethodTabButton
+              tabKey="maxsprt"
+              label="MaxSPRT"
+              sub="Sequential Ratio Test"
+              enabled={maxsprt.enabled}
+              active={activeTab === "maxsprt"}
+              onClick={() => setActiveTab("maxsprt")}
+              onToggle={(val) => setMaxsprt((p) => ({ ...p, enabled: val }))}
+            />
+
+            {/* CUSUM-DA */}
+            <MethodTabButton
+              tabKey="cusum"
+              label="CUSUM-DA"
+              sub="Change-Point Detector"
+              enabled={cusum.enabled}
+              active={activeTab === "cusum"}
+              onClick={() => setActiveTab("cusum")}
+              onToggle={(val) => setCusum((p) => ({ ...p, enabled: val }))}
             />
           </div>
 
@@ -880,12 +1090,14 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
                   Note: LASSO utilizes iterative cross-validated optimization with bootstrap resamplings. For large datasets (&gt;100k pairs), running LASSO will increase calculation time.
                 </div>
 
+                {/* Primary Clinical Thresholds */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <NumberField
                     label="Decision Threshold (Beta Coefficient)"
                     value={lasso.lasso_thresh}
                     step={0.01}
                     onChange={(val) => setLasso({ ...lasso, lasso_thresh: val })}
+                    help="Minimum beta coefficient to trigger an alerting signal."
                   />
                   <NumberField
                     label="Min Incident Events"
@@ -893,6 +1105,7 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
                     min={1}
                     step={1}
                     onChange={(val) => setLasso({ ...lasso, min_events: val })}
+                    help="Minimum report count required for inclusion in regression."
                   />
                   <SelectField
                     label="Regression Family"
@@ -904,58 +1117,87 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
                     onChange={(val) => setLasso({ ...lasso, family: val as "logistic" | "poisson" })}
                   />
                   <NumberField
-                    label="Bootstrap Resamples"
-                    value={lasso.num_bootstrap}
-                    min={1}
-                    step={5}
-                    onChange={(val) => setLasso({ ...lasso, num_bootstrap: val })}
-                  />
-                  <NumberField
                     label="Confidence Interval (%)"
                     value={lasso.ci}
                     min={50}
                     max={99}
                     step={1}
                     onChange={(val) => setLasso({ ...lasso, ci: val })}
-                  />
-                  <NumberField
-                    label="L1 Penalty (Lasso Alpha)"
-                    value={lasso.lasso_alpha}
-                    step={1e-9}
-                    onChange={(val) => setLasso({ ...lasso, lasso_alpha: val })}
-                  />
-                  <NumberField
-                    label="CPU Worker Threads (n_jobs)"
-                    value={lasso.n_jobs}
-                    min={1}
-                    step={1}
-                    onChange={(val) => setLasso({ ...lasso, n_jobs: val })}
+                    help="Coverage percentage for coefficient confidence intervals."
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                    <label className="flex items-center gap-2.5 cursor-pointer text-xs">
-                      <input
-                        type="checkbox"
-                        checked={lasso.relaxed}
-                        onChange={(e) => setLasso({ ...lasso, relaxed: e.target.checked })}
-                        className="w-4 h-4 rounded text-blue-600 bg-slate-900 border-slate-700"
-                      />
-                      <span className="text-slate-200">Relaxed LASSO (de-biasing)</span>
-                    </label>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                    <label className="flex items-center gap-2.5 cursor-pointer text-xs">
-                      <input
-                        type="checkbox"
-                        checked={lasso.use_lars}
-                        onChange={(e) => setLasso({ ...lasso, use_lars: e.target.checked })}
-                        className="w-4 h-4 rounded text-blue-600 bg-slate-900 border-slate-700"
-                      />
-                      <span className="text-slate-200">Least Angle Regression (LARS)</span>
-                    </label>
-                  </div>
+                {/* Collapsible Advanced Parameters */}
+                <div className="pt-2 border-t border-slate-800/80 space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedParams(!showAdvancedParams)}
+                    className="flex items-center justify-between w-full p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-slate-700 text-xs font-medium text-slate-300 transition"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Advanced Solver & Regularization Parameters</span>
+                    </span>
+                    <span className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <span>{showAdvancedParams ? "Hide Advanced" : "Show Advanced"}</span>
+                      {showAdvancedParams ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </span>
+                  </button>
+
+                  {showAdvancedParams && (
+                    <div className="space-y-4 pt-1 animate-in fade-in duration-150">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <NumberField
+                          label="Bootstrap Resamples"
+                          value={lasso.num_bootstrap}
+                          min={1}
+                          step={5}
+                          onChange={(val) => setLasso({ ...lasso, num_bootstrap: val })}
+                          help="Number of bootstrap iterations for stability selection."
+                        />
+                        <NumberField
+                          label="L1 Penalty (Lasso Alpha)"
+                          value={lasso.lasso_alpha}
+                          step={1e-9}
+                          onChange={(val) => setLasso({ ...lasso, lasso_alpha: val })}
+                          help="Regularization parameter controlling coefficient sparsity."
+                        />
+                        <NumberField
+                          label="CPU Worker Threads (n_jobs)"
+                          value={lasso.n_jobs}
+                          min={1}
+                          step={1}
+                          onChange={(val) => setLasso({ ...lasso, n_jobs: val })}
+                          help="Parallel multiprocessing cores for bootstrap execution."
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                          <label className="flex items-center gap-2.5 cursor-pointer text-xs">
+                            <input
+                              type="checkbox"
+                              checked={lasso.relaxed}
+                              onChange={(e) => setLasso({ ...lasso, relaxed: e.target.checked })}
+                              className="w-4 h-4 rounded text-blue-600 bg-slate-900 border-slate-700"
+                            />
+                            <span className="text-slate-200">Relaxed LASSO (de-biasing)</span>
+                          </label>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                          <label className="flex items-center gap-2.5 cursor-pointer text-xs">
+                            <input
+                              type="checkbox"
+                              checked={lasso.use_lars}
+                              onChange={(e) => setLasso({ ...lasso, use_lars: e.target.checked })}
+                              className="w-4 h-4 rounded text-blue-600 bg-slate-900 border-slate-700"
+                            />
+                            <span className="text-slate-200">Least Angle Regression (LARS)</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -986,6 +1228,7 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
                   </p>
                 </div>
 
+                {/* Primary Clinical Thresholds */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <NumberField
                     label="Target FDR Threshold (q ≤ α)"
@@ -1005,41 +1248,619 @@ export const MethodConfigModal: React.FC<MethodConfigModalProps> = ({
                     onChange={(val) => setScoreDa({ ...scoreDa, min_events: val })}
                     help="Minimum report count required to qualify as an actionable signal."
                   />
+                </div>
+
+                {/* Collapsible Advanced Parameters */}
+                <div className="pt-2 border-t border-slate-800/80 space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedParams(!showAdvancedParams)}
+                    className="flex items-center justify-between w-full p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-slate-700 text-xs font-medium text-slate-300 transition"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Advanced Solver & Regularization Parameters</span>
+                    </span>
+                    <span className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <span>{showAdvancedParams ? "Hide Advanced" : "Show Advanced"}</span>
+                      {showAdvancedParams ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </span>
+                  </button>
+
+                  {showAdvancedParams && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 animate-in fade-in duration-150">
+                      <NumberField
+                        label="Latent Factor Rank (Rank)"
+                        value={scoreDa.latent_rank}
+                        min={1}
+                        max={20}
+                        step={1}
+                        onChange={(val) => setScoreDa({ ...scoreDa, latent_rank: Math.max(1, val) })}
+                        help="Number of latent factors absorbing indication confounding & class effects."
+                      />
+                      <NumberField
+                        label="Syndromic Weight (λ₂)"
+                        value={scoreDa.syndromic_weight}
+                        min={0}
+                        max={5}
+                        step={0.05}
+                        onChange={(val) => setScoreDa({ ...scoreDa, syndromic_weight: val })}
+                        help="Graph Laplacian penalty borrowing strength across co-occurring events."
+                      />
+                      <NumberField
+                        label="Sparsity Penalty (λ₁)"
+                        value={scoreDa.sparsity_param}
+                        min={0}
+                        max={10}
+                        step={0.1}
+                        onChange={(val) => setScoreDa({ ...scoreDa, sparsity_param: val })}
+                        help="L1 soft-thresholding penalty shrinking minor residual fluctuations."
+                      />
+                      <NumberField
+                        label="Deflation Passes"
+                        value={scoreDa.deflate_iterations}
+                        min={1}
+                        max={5}
+                        step={1}
+                        onChange={(val) => setScoreDa({ ...scoreDa, deflate_iterations: Math.max(1, val) })}
+                        help="Iterative subtraction passes to eliminate blockbuster competition masking."
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 8. SCORE-DDI Configuration */}
+            {activeTab === "score_ddi" && (
+              <div className="space-y-5 animate-in fade-in duration-150">
+                <MethodToggleHeader
+                  title="SCORE-DDI: Drug-Drug & Multi-Drug Interaction Discovery"
+                  subtitle="Identifies synergistic pharmacodynamic drug combinations using Matrix FISTA and counterfactual null models."
+                  enabled={scoreDdi.enabled}
+                  onToggle={(enabled) => setScoreDdi({ ...scoreDdi, enabled })}
+                />
+
+                {/* Decision Rule & Archetype Card */}
+                <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-500/30 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-purple-400" />
+                      Interaction Model & Clinical Archetypes
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-900/60 text-purple-300 border border-purple-700/60 font-mono">
+                      Null Expectation: Λ_null • Decision: FDR
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    SCORE-DDI detects multi-agent risk compounding by comparing observed co-reported counts against a counterfactual null expectation model.
+                    Detected interactions are classified into validated archetypes: <strong>EMERGENT</strong> (de novo synergy), <strong>POTENTIATED</strong> (amplified baseline toxicity), or <strong>TWO-HIT</strong> (compound dual injury).
+                  </p>
+                  <div className="pt-2 border-t border-purple-500/20 text-[11px] text-purple-300/90 flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                    <span>Requires patient-level report grouping. Ensure a Case/Report ID column was mapped during Ingestion.</span>
+                  </div>
+                </div>
+
+                {/* Primary Clinical Thresholds */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Interaction Model Choice */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
+                      <span>Null Interaction Model</span>
+                      <span className="text-[10px] text-purple-400 font-mono">(Counterfactual)</span>
+                    </label>
+                    <select
+                      value={scoreDdi.interaction_model}
+                      onChange={(e) =>
+                        setScoreDdi({
+                          ...scoreDdi,
+                          interaction_model: e.target.value as "multiplicative" | "additive",
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500"
+                    >
+                      <option value="multiplicative">Multiplicative (Independent Relative Risk Compounding)</option>
+                      <option value="additive">Additive (Excess Risk Difference)</option>
+                    </select>
+                    <p className="text-[11px] text-slate-400">
+                      Multiplicative is recommended for spontaneous reporting systems to avoid false synergy on common baselines.
+                    </p>
+                  </div>
+
                   <NumberField
-                    label="Latent Factor Rank (Rank)"
-                    value={scoreDa.latent_rank}
+                    label="Target FDR Threshold (q ≤ α)"
+                    value={scoreDdi.fdr_threshold}
+                    min={0.001}
+                    max={0.25}
+                    step={0.01}
+                    onChange={(val) => setScoreDdi({ ...scoreDdi, fdr_threshold: val })}
+                    help="Benjamini-Hochberg false discovery rate cutoff for interaction signals."
+                  />
+                  <NumberField
+                    label="Min Co-Occurrence Reports (N)"
+                    value={scoreDdi.min_events}
                     min={1}
-                    max={20}
+                    max={50}
                     step={1}
-                    onChange={(val) => setScoreDa({ ...scoreDa, latent_rank: Math.max(1, val) })}
-                    help="Number of latent factors absorbing indication confounding & class effects."
+                    onChange={(val) => setScoreDdi({ ...scoreDdi, min_events: val })}
+                    help="Minimum co-reported count required to evaluate a drug pair."
                   />
+                </div>
+
+                {/* Collapsible Advanced Parameters */}
+                <div className="pt-2 border-t border-purple-800/40 space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedParams(!showAdvancedParams)}
+                    className="flex items-center justify-between w-full p-2.5 rounded-xl bg-purple-950/40 border border-purple-800/60 hover:border-purple-700 text-xs font-medium text-purple-200 transition"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Sliders className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Advanced Solver & Regularization Parameters</span>
+                    </span>
+                    <span className="flex items-center gap-1.5 text-[11px] text-purple-300">
+                      <span>{showAdvancedParams ? "Hide Advanced" : "Show Advanced"}</span>
+                      {showAdvancedParams ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </span>
+                  </button>
+
+                  {showAdvancedParams && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 animate-in fade-in duration-150">
+                      <NumberField
+                        label="Syndromic Graph Weight (λ₂)"
+                        value={scoreDdi.syndromic_weight}
+                        min={0}
+                        max={5}
+                        step={0.05}
+                        onChange={(val) => setScoreDdi({ ...scoreDdi, syndromic_weight: val })}
+                        help="Graph Laplacian penalty coupling related adverse events in clinical syndromes."
+                      />
+                      <NumberField
+                        label="Sparsity Penalty (λ₁)"
+                        value={scoreDdi.sparsity_param}
+                        min={0}
+                        max={10}
+                        step={0.1}
+                        onChange={(val) => setScoreDdi({ ...scoreDdi, sparsity_param: val })}
+                        help="L1 soft-thresholding penalty shrinking non-synergistic co-occurrence noise."
+                      />
+                      <NumberField
+                        label="FISTA Max Iterations"
+                        value={scoreDdi.max_iter}
+                        min={10}
+                        max={200}
+                        step={10}
+                        onChange={(val) => setScoreDdi({ ...scoreDdi, max_iter: Math.max(10, val) })}
+                        help="Maximum Matrix FISTA optimization steps per drug combination."
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 9. ZIGPS Configuration */}
+            {activeTab === "zigps" && (
+              <div className="space-y-5 animate-in fade-in duration-150">
+                <MethodToggleHeader
+                  title="ZIGPS (Zero-Inflated Gamma Poisson Shrinker)"
+                  subtitle="3-component Spike-and-Slab Empirical Bayes mixture separating structural zeros from true relative risk."
+                  enabled={zigps.enabled}
+                  onToggle={(enabled) => setZigps({ ...zigps, enabled })}
+                />
+
+                <div className="p-4 rounded-xl bg-cyan-950/20 border border-cyan-500/30 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                      Decision Rule & Spike-and-Slab Criterion
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-900/60 text-cyan-300 border border-cyan-700/60 font-mono">
+                      Spike: π₀ (Structural Zero) • Metric: EBGM / EB05
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    ZIGPS fits a 3-component mixture model isolating biological non-occurrences (structural zeros) from sampling zeros, preventing false alarms on rare events while computing robust Empirical Bayes Geometric Mean shrinkage.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <NumberField
-                    label="Syndromic Weight (λ₂)"
-                    value={scoreDa.syndromic_weight}
-                    min={0}
-                    max={5}
-                    step={0.05}
-                    onChange={(val) => setScoreDa({ ...scoreDa, syndromic_weight: val })}
-                    help="Graph Laplacian penalty borrowing strength across co-occurring events."
-                  />
-                  <NumberField
-                    label="Sparsity Penalty (λ₁)"
-                    value={scoreDa.sparsity_param}
-                    min={0}
-                    max={10}
+                    label="Relative Risk Null (RR₀)"
+                    value={zigps.relative_risk}
                     step={0.1}
-                    onChange={(val) => setScoreDa({ ...scoreDa, sparsity_param: val })}
-                    help="L1 soft-thresholding penalty shrinking minor residual fluctuations."
+                    onChange={(val) => setZigps({ ...zigps, relative_risk: val })}
+                    help="Null background relative risk expectation (typically 1.0)."
                   />
                   <NumberField
-                    label="Deflation Passes"
-                    value={scoreDa.deflate_iterations}
+                    label="Min Incident Events"
+                    value={zigps.min_events}
                     min={1}
-                    max={5}
                     step={1}
-                    onChange={(val) => setScoreDa({ ...scoreDa, deflate_iterations: Math.max(1, val) })}
-                    help="Iterative subtraction passes to eliminate blockbuster competition masking."
+                    onChange={(val) => setZigps({ ...zigps, min_events: val })}
+                    help="Minimum report count required to evaluate a signal."
+                  />
+                  <SelectField
+                    label="Decision Metric"
+                    value={zigps.decision_metric}
+                    options={[
+                      { value: "rank", label: "Rank (Percentile / Quantile Cutoff)" },
+                      { value: "fdr", label: "False Discovery Rate (FDR)" },
+                      { value: "signals", label: "Hard Count Threshold" },
+                    ]}
+                    onChange={(val) => setZigps({ ...zigps, decision_metric: val as DecisionMetric })}
+                  />
+                  <NumberField
+                    label="Decision Threshold"
+                    value={zigps.decision_thres}
+                    step={0.01}
+                    onChange={(val) => setZigps({ ...zigps, decision_thres: val })}
+                    help="Threshold on EB05 or FDR to qualify as an active alert."
+                  />
+                  <SelectField
+                    label="Ranking Statistic"
+                    value={zigps.ranking_statistic}
+                    options={[
+                      { value: "log2", label: "log₂(EBGM)" },
+                      { value: "quantile", label: "EB05 (5th Percentile Lower Bound)" },
+                      { value: "p_value", label: "Empirical p-value" },
+                    ]}
+                    onChange={(val) => setZigps({ ...zigps, ranking_statistic: val as any })}
+                  />
+                  <SelectField
+                    label="Expected Count Model"
+                    value={zigps.expected_method}
+                    options={[
+                      { value: "mantel-haentzel", label: "Mantel-Haenszel (Standard)" },
+                      { value: "poisson", label: "Poisson Background" },
+                      { value: "negative-binomial", label: "Negative Binomial (Overdispersed)" },
+                    ]}
+                    onChange={(val) => setZigps({ ...zigps, expected_method: val as ExpectedMethod })}
+                  />
+                </div>
+
+                <div className="pt-2 border-t border-slate-800/80 space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedParams(!showAdvancedParams)}
+                    className="flex items-center justify-between w-full p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-slate-700 text-xs font-medium text-slate-300 transition"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Advanced Solver & Mixture Optimization</span>
+                    </span>
+                    <span className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <span>{showAdvancedParams ? "Hide Advanced" : "Show Advanced"}</span>
+                      {showAdvancedParams ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </span>
+                  </button>
+
+                  {showAdvancedParams && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 animate-in fade-in duration-150">
+                      <NumberField
+                        label="Dispersion Alpha Parameter"
+                        value={zigps.method_alpha}
+                        step={0.1}
+                        onChange={(val) => setZigps({ ...zigps, method_alpha: val })}
+                        help="Overdispersion scale parameter for Negative Binomial null model."
+                      />
+                      <SelectField
+                        label="Minimization Optimizer"
+                        value={zigps.minimization_method}
+                        options={[
+                          { value: "L-BFGS-B", label: "L-BFGS-B (Profile Quasi-Newton, Recommended)" },
+                          { value: "Nelder-Mead", label: "Nelder-Mead Simplex" },
+                        ]}
+                        onChange={(val) => setZigps({ ...zigps, minimization_method: val })}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 10. AEGIS Configuration */}
+            {activeTab === "aegis" && (
+              <div className="space-y-5 animate-in fade-in duration-150">
+                <MethodToggleHeader
+                  title="AEGIS (Anytime Empirical Graph-Informed Shrinkage)"
+                  subtitle="Counterfactual LOCO baseline, Huber unmasking, NPMI syndromic borrowing, and anytime-valid e-values."
+                  enabled={aegis.enabled}
+                  onToggle={(enabled) => setAegis({ ...aegis, enabled })}
+                />
+
+                <div className="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/30 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                      Counterfactual LOCO Unmasking & Martingale e-Values
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-900/60 text-emerald-300 border border-emerald-700/60 font-mono">
+                      Metric: AEGIS_EBGM • Decision: Combined
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    AEGIS eliminates blockbuster competition masking via Leave-One-Cell-Out (LOCO) SVD baseline estimation with margin-hijacking Huber Winsorization. Incorporates top-K NPMI syndromic borrowing, Dual-EWMA surge velocity separation, and non-asymptotic martingale e-values.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <SelectField
+                    label="Decision Criterion"
+                    value={aegis.decision_metric}
+                    options={[
+                      { value: "combined", label: "Combined (AEGIS_LB > Cutoff & FDR ≤ Target)" },
+                      { value: "lb", label: "Lower Bound (AEGIS_LB > Cutoff)" },
+                      { value: "fdr", label: "False Discovery Rate (FDR ≤ Target)" },
+                      { value: "e_value", label: "Martingale e-FDR (Anytime Valid e-FDR ≤ Target)" },
+                    ]}
+                    onChange={(val) => setAegis({ ...aegis, decision_metric: val as any })}
+                  />
+                  <NumberField
+                    label="Target FDR / e-FDR Threshold"
+                    value={aegis.fdr_threshold}
+                    min={0.001}
+                    max={0.25}
+                    step={0.01}
+                    onChange={(val) => setAegis({ ...aegis, fdr_threshold: val })}
+                    help="False discovery rate cutoff for signaling drug-event pairs."
+                  />
+                  <NumberField
+                    label="Lower Bound Threshold (AEGIS_LB)"
+                    value={aegis.lb_threshold}
+                    step={0.1}
+                    onChange={(val) => setAegis({ ...aegis, lb_threshold: val })}
+                    help="Posterior credibility lower bound cutoff (typically 1.0 or 1.2)."
+                  />
+                  <NumberField
+                    label="Min Incident Events (N)"
+                    value={aegis.min_events}
+                    min={1}
+                    max={50}
+                    step={1}
+                    onChange={(val) => setAegis({ ...aegis, min_events: val })}
+                    help="Minimum report count required to qualify as an active alert."
+                  />
+                </div>
+
+                <div className="pt-2 border-t border-slate-800/80 space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedParams(!showAdvancedParams)}
+                    className="flex items-center justify-between w-full p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-slate-700 text-xs font-medium text-slate-300 transition"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Sliders className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Advanced LOCO, Graph & Martingale Hyperparameters</span>
+                    </span>
+                    <span className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <span>{showAdvancedParams ? "Hide Advanced" : "Show Advanced"}</span>
+                      {showAdvancedParams ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </span>
+                  </button>
+
+                  {showAdvancedParams && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 animate-in fade-in duration-150">
+                      <NumberField
+                        label="Huber Winsorization Delta (δ)"
+                        value={aegis.huber_delta}
+                        step={0.1}
+                        onChange={(val) => setAegis({ ...aegis, huber_delta: val })}
+                        help="Margin-hijacking outlier bound preventing blockbuster distortion."
+                      />
+                      <NumberField
+                        label="Latent SVD Factor Rank"
+                        value={aegis.latent_rank}
+                        min={1}
+                        max={10}
+                        step={1}
+                        onChange={(val) => setAegis({ ...aegis, latent_rank: Math.max(1, val) })}
+                        help="Number of counterfactual low-rank components absorbing class confounding."
+                      />
+                      <NumberField
+                        label="Syndromic Graph Gain"
+                        value={aegis.syndromic_gain}
+                        step={0.1}
+                        onChange={(val) => setAegis({ ...aegis, syndromic_gain: val })}
+                        help="NPMI graph conjugate Poisson-Gamma neighborhood pooling intensity."
+                      />
+                      <NumberField
+                        label="Top-K Graph Neighbors"
+                        value={aegis.top_k_neighbors}
+                        min={1}
+                        max={12}
+                        step={1}
+                        onChange={(val) => setAegis({ ...aegis, top_k_neighbors: val })}
+                        help="Maximum connected clinical syndrome neighbors per adverse event."
+                      />
+                      <NumberField
+                        label="Dual-EWMA Surge Velocity Gain"
+                        value={aegis.velocity_gain}
+                        step={0.05}
+                        onChange={(val) => setAegis({ ...aegis, velocity_gain: val })}
+                        help="Separates focal biological acceleration from drug-wide media surges."
+                      />
+                      <NumberField
+                        label="Martingale Coupling"
+                        value={aegis.martingale_coupling}
+                        step={0.05}
+                        onChange={(val) => setAegis({ ...aegis, martingale_coupling: val })}
+                        help="Vovk-Wang product martingale mixture coupling for anytime e-values."
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 11. MaxSPRT Configuration */}
+            {activeTab === "maxsprt" && (
+              <div className="space-y-5 animate-in fade-in duration-150">
+                <MethodToggleHeader
+                  title="MaxSPRT (Maximized Sequential Probability Ratio Test)"
+                  subtitle="Prospective real-time safety surveillance with exact Wald-Kulldorff sequential boundary control."
+                  enabled={maxsprt.enabled}
+                  onToggle={(enabled) => setMaxsprt({ ...maxsprt, enabled })}
+                />
+
+                <div className="p-4 rounded-xl bg-amber-950/20 border border-amber-500/30 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      Sequential Testing & Critical Value Boundary
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-900/60 text-amber-300 border border-amber-700/60 font-mono">
+                      Sequential Likelihood Ratio • Metric: LLR ≥ CV
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    MaxSPRT monitors accumulating safety reports continuously across time slices, strictly bounding cumulative Type-I error rate (alpha) via exact numerical boundary integration. Ideal for newly launched therapies or vaccine safety monitoring.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <NumberField
+                    label="Nominal Alpha (α)"
+                    value={maxsprt.alpha}
+                    min={0.001}
+                    max={0.2}
+                    step={0.01}
+                    onChange={(val) => setMaxsprt({ ...maxsprt, alpha: val })}
+                    help="Overall cumulative false-positive error rate bound (typically 0.05 or 0.01)."
+                  />
+                  <NumberField
+                    label="Min Incident Events (N)"
+                    value={maxsprt.min_events}
+                    min={1}
+                    max={50}
+                    step={1}
+                    onChange={(val) => setMaxsprt({ ...maxsprt, min_events: val })}
+                    help="Minimum report count required before triggering sequential evaluation."
+                  />
+                  <SelectField
+                    label="Surveillance Likelihood Model"
+                    value={maxsprt.model}
+                    options={[
+                      { value: "poisson", label: "Poisson (Count Incidence / Spontaneous Reports)" },
+                      { value: "binomial", label: "Binomial (Matched Cohorts / Binary Indicators)" },
+                    ]}
+                    onChange={(val) => setMaxsprt({ ...maxsprt, model: val as any })}
+                  />
+                  <SelectField
+                    label="Expected Count Model"
+                    value={maxsprt.expected_method}
+                    options={[
+                      { value: "mantel-haentzel", label: "Mantel-Haenszel (Standard)" },
+                      { value: "poisson", label: "Poisson Background" },
+                      { value: "negative-binomial", label: "Negative Binomial (Overdispersed)" },
+                    ]}
+                    onChange={(val) => setMaxsprt({ ...maxsprt, expected_method: val as ExpectedMethod })}
+                  />
+                </div>
+
+                <div className="pt-2 border-t border-slate-800/80 space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedParams(!showAdvancedParams)}
+                    className="flex items-center justify-between w-full p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-slate-700 text-xs font-medium text-slate-300 transition"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Advanced Sequential Stopping Bounds & Truncation</span>
+                    </span>
+                    <span className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <span>{showAdvancedParams ? "Hide Advanced" : "Show Advanced"}</span>
+                      {showAdvancedParams ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </span>
+                  </button>
+
+                  {showAdvancedParams && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 animate-in fade-in duration-150">
+                      <NumberField
+                        label="Upper Surveillance Limit (T)"
+                        value={maxsprt.upper_limit}
+                        min={5}
+                        step={5}
+                        onChange={(val) => setMaxsprt({ ...maxsprt, upper_limit: val })}
+                        help="Maximum expected count or surveillance sample size horizon."
+                      />
+                      <NumberField
+                        label="Relative Risk Upper Truncation Cap"
+                        value={maxsprt.upper_rr_cap}
+                        min={10}
+                        step={10}
+                        onChange={(val) => setMaxsprt({ ...maxsprt, upper_rr_cap: val })}
+                        help="Caps maximum RR estimate to prevent runaway LLR on single-event anomalies."
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 12. CUSUM-DA Configuration */}
+            {activeTab === "cusum" && (
+              <div className="space-y-5 animate-in fade-in duration-150">
+                <MethodToggleHeader
+                  title="CUSUM-DA (Cumulative Sum Control Chart)"
+                  subtitle="Instantaneous change-point detector for sudden safety surges, batch defects, and emerging risks."
+                  enabled={cusum.enabled}
+                  onToggle={(enabled) => setCusum({ ...cusum, enabled })}
+                />
+
+                <div className="p-4 rounded-xl bg-rose-950/20 border border-rose-500/30 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-rose-400" />
+                      Change-Point Detection & ARL₀ Boundary
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-900/60 text-rose-300 border border-rose-700/60 font-mono">
+                      Page-Lucas Cumulative Sum • Metric: CUSUM ≥ h
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    CUSUM accumulates evidence of positive drift in reporting rates relative to reference parameter k = (θ₁ - 1)/ln(θ₁), triggering immediate change-point alarms calibrated via Siegmund Average Run Length (ARL₀).
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <NumberField
+                    label="Target Out-of-Control Relative Risk (θ₁)"
+                    value={cusum.target_rr}
+                    min={1.1}
+                    max={10.0}
+                    step={0.1}
+                    onChange={(val) => setCusum({ ...cusum, target_rr: val })}
+                    help="Target out-of-control risk ratio to detect rapidly (typically 1.5 to 3.0)."
+                  />
+                  <NumberField
+                    label="In-Control Average Run Length (ARL₀)"
+                    value={cusum.arl0}
+                    min={50}
+                    max={5000}
+                    step={50}
+                    onChange={(val) => setCusum({ ...cusum, arl0: val })}
+                    help="Expected run length between false alarms under the null hypothesis (typically 500)."
+                  />
+                  <NumberField
+                    label="Min Incident Events (N)"
+                    value={cusum.min_events}
+                    min={1}
+                    max={50}
+                    step={1}
+                    onChange={(val) => setCusum({ ...cusum, min_events: val })}
+                    help="Minimum report count required before triggering evaluation."
+                  />
+                  <SelectField
+                    label="Expected Count Model"
+                    value={cusum.expected_method}
+                    options={[
+                      { value: "mantel-haentzel", label: "Mantel-Haenszel (Standard)" },
+                      { value: "poisson", label: "Poisson Background" },
+                      { value: "negative-binomial", label: "Negative Binomial (Overdispersed)" },
+                    ]}
+                    onChange={(val) => setCusum({ ...cusum, expected_method: val as ExpectedMethod })}
                   />
                 </div>
               </div>

@@ -30,9 +30,24 @@ export const ForestPlot: React.FC<ForestPlotProps> = ({
   adverseEvent,
   className = "",
 }) => {
-  const [scaleType, setScaleType] = useState<"log" | "linear">("log");
+  // Check for zero-centered or negative scores (e.g. BCPNN IC, LASSO beta, SCORE SER)
+  const hasNonPositive = useMemo(() => {
+    return methods.some(
+      (m) =>
+        (m.score !== null && m.score <= 0) ||
+        (m.ci_lower !== null && m.ci_lower !== undefined && m.ci_lower <= 0)
+    );
+  }, [methods]);
+
+  const [scaleType, setScaleType] = useState<"log" | "linear">(hasNonPositive ? "linear" : "log");
   const [hoveredMethod, setHoveredMethod] = useState<PlotItem | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+
+  React.useEffect(() => {
+    if (hasNonPositive && scaleType === "log") {
+      setScaleType("linear");
+    }
+  }, [hasNonPositive]);
 
   // Filter and normalize methods that have usable numeric scores
   const validItems: PlotItem[] = useMemo(() => {
@@ -114,10 +129,14 @@ export const ForestPlot: React.FC<ForestPlotProps> = ({
       let maxVal = Math.max(...allVals, 2);
 
       const padding = (maxVal - minVal) * 0.15 || 0.5;
+      const isZeroCentered = validItems.some((item) =>
+        ["BCPNN", "LASSO", "SCORE", "SCORE_DA", "SCORE_DDI"].includes(item.method.toUpperCase())
+      );
+
       return {
-        minDomain: Math.max(0, minVal - padding),
+        minDomain: Math.min(0, minVal - padding),
         maxDomain: maxVal + padding,
-        nullValue: 1.0,
+        nullValue: isZeroCentered ? 0.0 : 1.0,
       };
     }
   }, [validItems, scaleType]);
@@ -192,9 +211,17 @@ export const ForestPlot: React.FC<ForestPlotProps> = ({
           <div className="flex items-center bg-slate-800/80 p-0.5 rounded-lg border border-slate-700">
             <button
               onClick={() => setScaleType("log")}
+              disabled={hasNonPositive}
+              title={
+                hasNonPositive
+                  ? "Log scale disabled: zero-centered or negative scores present (LASSO β, SCORE SER, BCPNN IC)"
+                  : "Logarithmic scale (Null = 1.0)"
+              }
               className={`px-2.5 py-1 rounded text-xs font-medium transition ${
                 scaleType === "log"
                   ? "bg-indigo-600 text-white shadow-sm"
+                  : hasNonPositive
+                  ? "text-slate-600 cursor-not-allowed opacity-50"
                   : "text-slate-400 hover:text-slate-200"
               }`}
             >
@@ -202,13 +229,14 @@ export const ForestPlot: React.FC<ForestPlotProps> = ({
             </button>
             <button
               onClick={() => setScaleType("linear")}
+              title="Linear scale (allows negative & zero-centered metrics)"
               className={`px-2.5 py-1 rounded text-xs font-medium transition ${
                 scaleType === "linear"
                   ? "bg-indigo-600 text-white shadow-sm"
                   : "text-slate-400 hover:text-slate-200"
               }`}
             >
-              Linear
+              Linear {nullValue === 0.0 ? "(Null=0)" : "(Null=1)"}
             </button>
           </div>
         </div>
@@ -266,6 +294,33 @@ export const ForestPlot: React.FC<ForestPlotProps> = ({
                 </g>
               );
             })}
+
+            {/* Explicit Null Reference Line */}
+            {nullValue >= minDomain && nullValue <= maxDomain && (
+              <g>
+                <line
+                  x1={nullX}
+                  y1={marginTop - 8}
+                  x2={nullX}
+                  y2={height - marginBottom}
+                  stroke="#818cf8"
+                  strokeWidth="1.5"
+                  strokeDasharray="4 3"
+                  opacity="0.9"
+                />
+                <text
+                  x={nullX}
+                  y={marginTop - 15}
+                  textAnchor="middle"
+                  fill="#a5b4fc"
+                  fontSize="9"
+                  fontWeight="600"
+                  fontFamily="monospace"
+                >
+                  Null ({nullValue})
+                </text>
+              </g>
+            )}
 
             {/* Horizontal baseline for X-axis */}
             <line

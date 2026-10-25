@@ -14,6 +14,7 @@ import {
   TrendingUp,
   Maximize2,
   Minimize2,
+  Sparkles,
 } from "lucide-react";
 import { AgreementTier, InspectSignalResponse, MethodSignalInspection, SignalRow } from "../../types";
 import { inspectSignal } from "../../services/api";
@@ -52,9 +53,15 @@ const METHOD_DESCRIPTIONS: Record<string, string> = {
   RFET: "Reporting Fisher's Exact Test - Exact hypergeometric test with mid-p value adjustment for small sample protection.",
   BCPNN: "Bayesian Confidence Propagation Neural Network (Bate et al., 1998) - Information Component (IC) with Dirichlet/Beta prior.",
   GPS: "Gamma Poisson Shrinker (DuMouchel, 1999) - Empirical Bayes Geometric Mean (EBGM) and 5th percentile lower bound (EB05).",
+  ZIGPS: "Zero-Inflated Gamma Poisson Shrinker - 3-component spike-and-slab mixture separating structural biological zeros from true relative risk.",
   LASSO: "L1-Penalized Multi-Variable Regression - High-dimensional confounding and masking control via relaxed penalized GLM.",
-  SCORE_DA: "Syndromic Confounding & Overdispersion Removal - Low-rank matrix factorization and graph Laplacian regularized residuals.",
-  SCORE: "Syndromic Confounding & Overdispersion Removal - Low-rank matrix factorization and graph Laplacian regularized residuals.",
+  SCORE_DA: "Syndromic Cellwise Outlier & Residual Estimation - Low-rank indication absorption and graph Laplacian regularized residuals.",
+  SCORE: "Syndromic Cellwise Outlier & Residual Estimation - Low-rank indication absorption and graph Laplacian regularized residuals.",
+  AEGIS: "Anytime Empirical Graph-Informed Shrinkage - Counterfactual LOCO baseline, Huber unmasking, NPMI syndromic borrowing, and anytime-valid e-values.",
+  SCORE_DDI: "Syndromic Drug-Drug & Multi-Drug Interaction Discovery - Counterfactual null expectation and Matrix FISTA synergy detection.",
+  MAXSPRT: "Maximized Sequential Probability Ratio Test (Kulldorff, 2011) - Exact sequential likelihood ratio testing strictly bounding cumulative Type-I error over time.",
+  CUSUM: "Cumulative Sum Control Chart (Page/Lucas) - Instantaneous change-point surveillance detector with Siegmund ARL₀ calibration.",
+  CUSUM_DA: "Cumulative Sum Control Chart (Page/Lucas) - Instantaneous change-point surveillance detector with Siegmund ARL₀ calibration.",
 };
 
 export const SignalDrawer: React.FC<SignalDrawerProps> = ({
@@ -313,6 +320,38 @@ O/E Ratio: ${disproportionalityRatio ?? "N/A"}`;
             </div>
           </div>
 
+          {/* Clinical Signal Synthesis & Review Recommendation */}
+          <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-white">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>Clinical Pharmacovigilance Synthesis</span>
+              </div>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                {currentTier} Evidence
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              {currentTier === "Unanimous" ? (
+                <>
+                  <strong>High-Confidence Regulatory Signal:</strong> All {currentTotalMethods} disproportionality algorithms (across frequentist, empirical Bayes, and multivariate regression paradigms) independently corroborate this safety signal. Observed case volume ({currentCount.toLocaleString()} reports) is <strong>{disproportionalityRatio ?? "substantially"}× higher</strong> than expected under independent background reporting.
+                </>
+              ) : currentTier === "Strong" ? (
+                <>
+                  <strong>Strong Multi-Method Confirmation:</strong> {currentVotes} of {currentTotalMethods} algorithms flagged this drug-event pair as disproportionately reported. Disproportionality remains robust across both raw frequency ratios and Bayesian shrinkage models. Prioritize for medical literature review and case narrative triage.
+                </>
+              ) : currentTier === "Moderate" ? (
+                <>
+                  <strong>Emerging or Discrepant Signal:</strong> Flagged by {currentVotes} of {currentTotalMethods} algorithms. Discrepancies between frequentist ratios and shrinkage/penalized methods (e.g. GPS EBGM or LASSO) often indicate small-sample variability or confounding by indication.
+                </>
+              ) : (
+                <>
+                  <strong>Isolated or Exploratory Signal:</strong> Detected by only {currentVotes} algorithm. This association is likely driven by small sample counts or method-specific sensitivity thresholds. Routine surveillance monitoring recommended without immediate escalation.
+                </>
+              )}
+            </p>
+          </div>
+
           {/* Contingency Stats Card */}
           <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 shadow-md">
             <div className="flex items-center justify-between mb-3">
@@ -447,6 +486,34 @@ O/E Ratio: ${disproportionalityRatio ?? "N/A"}`;
                               <span>{m.method}</span>
                               {desc && (
                                 <Info className="w-3 h-3 text-slate-500 hover:text-slate-300 cursor-help opacity-0 group-hover:opacity-100 transition-opacity" />
+                              )}
+                            </div>
+                            {/* Specialized v3.5.1 Algorithmic Telemetry */}
+                            <div className="flex items-center gap-1 mt-1 flex-wrap">
+                              {m.unmasking_ratio !== null && m.unmasking_ratio !== undefined && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono" title="LOCO Unmasking Ratio: Lift relative to naive expected count">
+                                  Unmask: {m.unmasking_ratio.toFixed(2)}×
+                                </span>
+                              )}
+                              {m.surge_velocity !== null && m.surge_velocity !== undefined && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-mono" title="Continuous-Kernel Dual-EWMA Surge Velocity">
+                                  Surge: {m.surge_velocity.toFixed(2)}
+                                </span>
+                              )}
+                              {m.pi0_structural !== null && m.pi0_structural !== undefined && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 font-mono" title="Structural Zero Probability (π₀)">
+                                  π₀: {m.pi0_structural.toFixed(3)}
+                                </span>
+                              )}
+                              {m.critical_value !== null && m.critical_value !== undefined && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono" title="Sequential Critical Stopping Boundary">
+                                  CV: {m.critical_value.toFixed(2)}
+                                </span>
+                              )}
+                              {m.e_value !== null && m.e_value !== undefined && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono" title="Wald-Poisson Product Martingale e-Value">
+                                  e: {m.e_value.toFixed(2)}
+                                </span>
                               )}
                             </div>
                           </td>

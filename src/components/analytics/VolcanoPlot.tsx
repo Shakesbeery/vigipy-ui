@@ -74,6 +74,14 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
     );
   }, [data]);
 
+  // Identify top extreme alerting signals to label directly on the canvas
+  const topAlertingPoints = useMemo(() => {
+    return [...points]
+      .filter((p) => p.alert && p.effect_size > 0)
+      .sort((a, b) => b.neg_log_p * b.effect_size - a.neg_log_p * a.effect_size)
+      .slice(0, 5);
+  }, [points]);
+
   // Dimensions
   const width = 850;
   const height = 480;
@@ -233,8 +241,8 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
 
         <div className="flex items-center gap-2 flex-wrap">
           {/* Method Selector */}
-          <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800">
-            {["PRR", "ROR", "RFET", "BCPNN", "GPS", "LASSO", "SCORE"].map((m) => (
+          <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 flex-wrap">
+            {["PRR", "ROR", "RFET", "BCPNN", "GPS", "ZIGPS", "LASSO", "SCORE", "AEGIS", "MAXSPRT", "CUSUM", "SCORE-DDI"].map((m) => (
               <button
                 key={m}
                 onClick={() => setSelectedMethod(m)}
@@ -454,7 +462,16 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
               fontWeight="600"
               textAnchor="middle"
             >
-              Effect Size ({selectedMethod === "BCPNN" ? "Information Component IC" : selectedMethod === "LASSO" ? "Beta Coefficient" : selectedMethod === "SCORE" ? "Residual SER" : "log₂ Ratio"})
+              Effect Size ({
+                selectedMethod === "BCPNN" ? "Information Component IC" :
+                selectedMethod === "LASSO" ? "Beta Coefficient" :
+                selectedMethod === "SCORE" ? "Residual SER" :
+                selectedMethod === "SCORE-DDI" ? "Synergistic Excess Score SER_Interaction" :
+                selectedMethod === "AEGIS" ? "AEGIS EBGM (LOCO Unmasked)" :
+                selectedMethod === "MAXSPRT" ? "Sequential Log-Likelihood Ratio (LLR)" :
+                selectedMethod === "CUSUM" ? "Cumulative Sum Statistic" :
+                "log₂ Ratio"
+              })
             </text>
             <text
               transform={`rotate(-90 ${padding.left - 45} ${padding.top + innerHeight / 2})`}
@@ -501,6 +518,41 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
                   onMouseMove={(e) => handlePointHover(e, pt)}
                   onMouseLeave={() => setHoveredPoint(null)}
                 />
+              );
+            })}
+
+            {/* Direct Canvas Callouts for Top Alerting Signals */}
+            {topAlertingPoints.map((pt, i) => {
+              const cx = scaleX(pt.effect_size);
+              const cy = scaleY(pt.neg_log_p);
+              if (
+                cx < padding.left ||
+                cx > padding.left + innerWidth ||
+                cy < padding.top ||
+                cy > padding.top + innerHeight
+              ) {
+                return null;
+              }
+              const isRightSide = cx > padding.left + innerWidth * 0.72;
+              const labelX = isRightSide ? cx - 10 : cx + 10;
+              const labelAnchor = isRightSide ? "end" : "start";
+
+              return (
+                <g key={`top-label-${i}-${pt.product}-${pt.adverse_event}`} className="pointer-events-none select-none">
+                  <circle cx={cx} cy={cy} r={7.5} fill="none" stroke="#f43f5e" strokeWidth="1.5" opacity="0.8" strokeDasharray="2 2" />
+                  <text
+                    x={labelX}
+                    y={cy - 4}
+                    fill="#fecdd3"
+                    fontSize="10"
+                    fontWeight="600"
+                    textAnchor={labelAnchor}
+                    className="drop-shadow-md"
+                    fontFamily="monospace"
+                  >
+                    {pt.product.length > 12 ? `${pt.product.slice(0, 12)}…` : pt.product} • {pt.adverse_event.length > 14 ? `${pt.adverse_event.slice(0, 14)}…` : pt.adverse_event}
+                  </text>
+                </g>
               );
             })}
 
