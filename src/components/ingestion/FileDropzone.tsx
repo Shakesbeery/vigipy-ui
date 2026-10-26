@@ -16,8 +16,8 @@ import {
 import { uploadLocalFile } from "../../services/api";
 
 export interface FileDropzoneProps {
-  onFileSelect: (filePath: string) => void;
-  onImportResults?: (filePath: string) => void;
+  onFileSelect: (filePath: string) => Promise<void> | void;
+  onImportResults?: (filePath: string) => Promise<void> | void;
   onOpenOpenFDA?: () => void;
   isLoading?: boolean;
   selectedFilePath?: string | null;
@@ -86,23 +86,27 @@ export const FileDropzone: React.FC<FileDropzoneProps> = ({
 
   const handleSelectedFile = async (file: File) => {
     setUploadError(null);
-    // In Electron or local desktop webview environments, file.path is populated with absolute path
     const electronPath = (file as any).path;
-    if (electronPath && typeof electronPath === "string" && electronPath.length > 3) {
-      onFileSelect(electronPath);
-    } else {
-      // In browser sandbox, stream upload the file to backend
-      try {
+    try {
+      if (electronPath && typeof electronPath === "string" && electronPath.length > 3) {
+        setIsUploading(true);
+        setUploadMessage(`Reading ${file.name}...`);
+        await onFileSelect(electronPath);
+      } else {
         setIsUploading(true);
         setUploadMessage(`Uploading ${file.name} to server...`);
         const res = await uploadLocalFile(file);
         setCustomPath(res.file_path);
-        onFileSelect(res.file_path);
-      } catch (err: any) {
-        setUploadError(`Failed to upload local file: ${err.message}`);
-      } finally {
-        setIsUploading(false);
-        setUploadMessage("");
+        setUploadMessage(`Analyzing schema for ${file.name}...`);
+        await onFileSelect(res.file_path);
+      }
+    } catch (err: any) {
+      setUploadError(`Failed to load file: ${err.message}`);
+    } finally {
+      setIsUploading(false);
+      setUploadMessage("");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
       }
     }
   };
@@ -113,16 +117,39 @@ export const FileDropzone: React.FC<FileDropzoneProps> = ({
     const file = files[0];
     setUploadError(null);
     const electronPath = (file as any).path;
-    if (electronPath && typeof electronPath === "string" && electronPath.length > 3) {
-      onImportResults(electronPath);
-    } else {
-      try {
+    try {
+      if (electronPath && typeof electronPath === "string" && electronPath.length > 3) {
+        setIsUploading(true);
+        setUploadMessage(`Processing ${file.name}...`);
+        await onImportResults(electronPath);
+      } else {
         setIsUploading(true);
         setUploadMessage(`Uploading ${file.name} for import...`);
         const res = await uploadLocalFile(file);
-        onImportResults(res.file_path);
+        setUploadMessage(`Indexing ${file.name}...`);
+        await onImportResults(res.file_path);
+      }
+    } catch (err: any) {
+      setUploadError(`Failed to import results file: ${err.message}`);
+    } finally {
+      setIsUploading(false);
+      setUploadMessage("");
+      if (resultsFileInputRef.current) {
+        resultsFileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleManualSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (customPath.trim()) {
+      setUploadError(null);
+      try {
+        setIsUploading(true);
+        setUploadMessage(`Loading ${customPath.trim()}...`);
+        await onFileSelect(customPath.trim());
       } catch (err: any) {
-        setUploadError(`Failed to upload results file: ${err.message}`);
+        setUploadError(`Failed to load file path: ${err.message}`);
       } finally {
         setIsUploading(false);
         setUploadMessage("");
@@ -130,16 +157,19 @@ export const FileDropzone: React.FC<FileDropzoneProps> = ({
     }
   };
 
-  const handleManualSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (customPath.trim()) {
-      onFileSelect(customPath.trim());
-    }
-  };
-
-  const handleSampleClick = () => {
+  const handleSampleClick = async () => {
+    setUploadError(null);
     setCustomPath(samplePath);
-    onFileSelect(samplePath);
+    try {
+      setIsUploading(true);
+      setUploadMessage("Loading MAUDE sample benchmark...");
+      await onFileSelect(samplePath);
+    } catch (err: any) {
+      setUploadError(`Failed to load sample: ${err.message}`);
+    } finally {
+      setIsUploading(false);
+      setUploadMessage("");
+    }
   };
 
   return (
@@ -163,7 +193,7 @@ export const FileDropzone: React.FC<FileDropzoneProps> = ({
           accept=".csv,.tsv,.xlsx,.xls,.parquet"
           className="hidden"
           onChange={handleFileInputChange}
-          disabled={isLoading}
+          disabled={isLoading || isUploading}
         />
 
         {/* Icon */}
@@ -229,7 +259,7 @@ export const FileDropzone: React.FC<FileDropzoneProps> = ({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={isLoading}
+            disabled={isLoading || isUploading}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold shadow-lg shadow-blue-500/25 transition active:scale-95"
           >
             <FolderOpen className="w-4 h-4" />

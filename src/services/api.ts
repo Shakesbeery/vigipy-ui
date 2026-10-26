@@ -274,6 +274,7 @@ export async function uploadLocalFile(
       "Content-Type": "application/octet-stream",
     },
     body: file,
+    signal: AbortSignal.timeout(60000),
   });
   return handleResponse(res, "POST /api/data/upload");
 }
@@ -288,7 +289,7 @@ export async function importResultsFile(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ file_path: filePath }),
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(60000),
   });
   return handleResponse<DataSummaryResponse>(res, "POST /api/data/import_results");
 }

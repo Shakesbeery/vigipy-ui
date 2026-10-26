@@ -1339,20 +1339,39 @@ def import_results_file(file_path: str) -> Dict[str, Any]:
     # Standardize column names
     col_rename = {}
     for c in df_comparison.columns:
-        c_l = str(c).lower().strip()
-        if c_l in ["product_name", "drug_name", "brand_name", "drug", "product"] and "Product" not in df_comparison.columns:
+        c_clean = str(c).lower().replace(" ", "_").replace("-", "").strip()
+        if c_clean in [
+            "product", "product_name", "productname", "drug", "drug_name",
+            "drugname", "name", "brand_name", "brandname", "generic_name",
+            "active_substance", "substance", "item"
+        ] and "Product" not in df_comparison.columns:
             col_rename[c] = "Product"
-        elif c_l in ["ae_name", "event_simplified", "adverse_event", "event", "ae"] and "Adverse Event" not in df_comparison.columns:
+        elif c_clean in [
+            "adverse_event", "adverseevent", "ae", "ae_name", "event",
+            "event_name", "eventname", "reaction", "reaction_meddra", "pt",
+            "preferred_term", "preferredterm", "symptom", "problem", "adverse_reaction"
+        ] and "Adverse Event" not in df_comparison.columns:
             col_rename[c] = "Adverse Event"
-        elif c_l in ["count", "num_events", "n"] and "Count" not in df_comparison.columns:
+        elif c_clean in [
+            "count", "num_events", "numevents", "n", "cases", "n_cases",
+            "reports", "report_count", "frequency", "freq", "total_reports"
+        ] and "Count" not in df_comparison.columns:
             col_rename[c] = "Count"
-        elif c_l in ["expected_count", "expected"] and "Expected Count" not in df_comparison.columns:
+        elif c_clean in [
+            "expected_count", "expectedcount", "expected", "e", "e_count", "exp_count"
+        ] and "Expected Count" not in df_comparison.columns:
             col_rename[c] = "Expected Count"
-        elif c_l in ["consensus_score", "score"] and "consensus_score" not in df_comparison.columns:
+        elif c_clean in [
+            "consensus_score", "consensusscore", "score", "composite_score"
+        ] and "consensus_score" not in df_comparison.columns:
             col_rename[c] = "consensus_score"
-        elif c_l in ["agreement_tier", "tier"] and "agreement_tier" not in df_comparison.columns:
+        elif c_clean in [
+            "agreement_tier", "agreementtier", "tier", "agreement"
+        ] and "agreement_tier" not in df_comparison.columns:
             col_rename[c] = "agreement_tier"
-        elif c_l in ["votes", "alerts", "vote"] and "votes" not in df_comparison.columns:
+        elif c_clean in [
+            "votes", "vote", "alerts", "alert_count", "num_alerts"
+        ] and "votes" not in df_comparison.columns:
             col_rename[c] = "votes"
 
     if col_rename:
@@ -1361,20 +1380,46 @@ def import_results_file(file_path: str) -> Dict[str, Any]:
     if "Product" not in df_comparison.columns or "Adverse Event" not in df_comparison.columns:
         raise ValueError("Imported file does not contain identifiable 'Product' and 'Adverse Event' columns.")
 
+    # All known methods
+    ALL_METHODS = [
+        "prr", "ror", "rfet", "bcpnn", "gps", "lasso",
+        "score", "score_da", "score_ddi", "zigps", "aegis", "maxsprt", "cusum", "cusum_da"
+    ]
+
     # Identify methods in the table
     detected_methods = set()
     for col in df_comparison.columns:
-        col_s = str(col).lower()
-        for m in ["prr", "ror", "rfet", "bcpnn", "gps", "lasso"]:
+        col_s = str(col).lower().replace("-", "_")
+        for m in ALL_METHODS:
             if col_s.startswith(f"alert_{m}") or col_s.startswith(f"score_{m}") or col_s == m:
                 detected_methods.add(m)
+            elif m in ("prr", "ror", "rfet", "lasso") and col_s == m:
+                detected_methods.add(m)
+            elif m == "bcpnn" and ("ic" in col_s or "quantile" in col_s):
+                detected_methods.add("bcpnn")
+            elif m in ("gps", "zigps") and "ebgm" in col_s:
+                detected_methods.add("gps")
+            elif m == "aegis" and "aegis" in col_s:
+                detected_methods.add("aegis")
+            elif m == "maxsprt" and "llr" in col_s:
+                detected_methods.add("maxsprt")
+            elif m in ("cusum", "cusum_da") and "cusum" in col_s:
+                detected_methods.add("cusum")
     methods_list = sorted(list(detected_methods)) if detected_methods else ["prr", "ror"]
+
+    def parse_bool_series(s: pd.Series) -> pd.Series:
+        if s.dtype == bool:
+            return s
+        if pd.api.types.is_numeric_dtype(s):
+            return s > 0
+        s_str = s.astype(str).str.strip().str.lower()
+        return s_str.isin(["true", "1", "1.0", "t", "y", "yes"])
 
     # Compute agreement matrices if not loaded from Excel workbook
     if not agreement_matrices and len(methods_list) >= 2:
         alert_cols = {}
         for m in methods_list:
-            for cand in [f"alert_{m}", f"alert_{m.upper()}", m.upper(), m]:
+            for cand in [f"alert_{m}", f"alert_{m.upper()}", f"alert_{m.lower()}", m.upper(), m]:
                 if cand in df_comparison.columns:
                     alert_cols[m] = cand
                     break
@@ -1384,8 +1429,8 @@ def import_results_file(file_path: str) -> Dict[str, Any]:
                 ag_data[k] = pd.DataFrame(index=[m.upper() for m in methods_list], columns=[m.upper() for m in methods_list], dtype=float)
             for m1 in methods_list:
                 for m2 in methods_list:
-                    s1 = df_comparison[alert_cols[m1]].astype(bool)
-                    s2 = df_comparison[alert_cols[m2]].astype(bool)
+                    s1 = parse_bool_series(df_comparison[alert_cols[m1]])
+                    s2 = parse_bool_series(df_comparison[alert_cols[m2]])
                     intersect = int((s1 & s2).sum())
                     union = int((s1 | s2).sum())
                     ag_data["jaccard"].loc[m1.upper(), m2.upper()] = float(intersect / union) if union > 0 else 1.0
@@ -1397,9 +1442,10 @@ def import_results_file(file_path: str) -> Dict[str, Any]:
 
     # Ensure votes, total_methods, consensus_score are present
     if "votes" not in df_comparison.columns:
-        alert_cs = [c for c in df_comparison.columns if c.startswith("alert_")]
+        alert_cs = [c for c in df_comparison.columns if str(c).lower().startswith("alert_")]
         if alert_cs:
-            df_comparison["votes"] = df_comparison[alert_cs].sum(axis=1)
+            bool_df = pd.DataFrame({c: parse_bool_series(df_comparison[c]) for c in alert_cs})
+            df_comparison["votes"] = bool_df.sum(axis=1)
             df_comparison["total_methods"] = len(alert_cs)
             df_comparison["consensus_score"] = df_comparison["votes"] / max(1, len(alert_cs))
         else:

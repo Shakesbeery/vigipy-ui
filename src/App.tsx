@@ -153,7 +153,9 @@ export const App: React.FC = () => {
       const preview = await fetchFilePreview(filePath);
       setFilePreview(preview);
     } catch (err: any) {
-      setErrorMessage(err.message || "Failed to load file preview.");
+      const msg = err.message || "Failed to load file preview.";
+      setErrorMessage(msg);
+      throw err;
     } finally {
       setIsPreviewLoading(false);
     }
@@ -309,7 +311,9 @@ export const App: React.FC = () => {
       setIsImportOpen(false);
       setActiveTab("signals");
     } catch (err: any) {
-      setErrorMessage(err.message || "Failed to import previous analysis results.");
+      const msg = err.message || "Failed to import previous analysis results.";
+      setErrorMessage(msg);
+      throw err;
     } finally {
       setIsImporting(false);
     }

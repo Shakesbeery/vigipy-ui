@@ -15,7 +15,7 @@ import { uploadLocalFile } from "../../services/api";
 export interface ImportResultsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onImport: (filePath: string) => void;
+  onImport: (filePath: string) => Promise<void> | void;
   isLoading?: boolean;
 }
 
@@ -31,6 +31,13 @@ export const ImportResultsModal: React.FC<ImportResultsModalProps> = ({
   const [uploadStatus, setUploadStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setError(null);
+      setUploadStatus("");
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -66,28 +73,46 @@ export const ImportResultsModal: React.FC<ImportResultsModalProps> = ({
   const handleSelectedFile = async (file: File) => {
     setError(null);
     const electronPath = (file as any).path;
-    if (electronPath && typeof electronPath === "string" && electronPath.length > 3) {
-      onImport(electronPath);
-    } else {
-      try {
+    try {
+      if (electronPath && typeof electronPath === "string" && electronPath.length > 3) {
+        setUploading(true);
+        setUploadStatus(`Indexing ${file.name}...`);
+        await onImport(electronPath);
+        onClose();
+      } else {
         setUploading(true);
         setUploadStatus(`Uploading ${file.name}...`);
         const res = await uploadLocalFile(file);
         setCustomPath(res.file_path);
-        onImport(res.file_path);
-      } catch (err: any) {
-        setError(`Failed to upload results file: ${err.message}`);
-      } finally {
-        setUploading(false);
-        setUploadStatus("");
+        setUploadStatus(`Processing and indexing ${file.name}...`);
+        await onImport(res.file_path);
+        onClose();
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to import results file.");
+    } finally {
+      setUploading(false);
+      setUploadStatus("");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
       }
     }
   };
 
-  const handleManualSubmit = (e: React.FormEvent) => {
+  const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (customPath.trim()) {
-      onImport(customPath.trim());
+    if (!customPath.trim()) return;
+    setError(null);
+    try {
+      setUploading(true);
+      setUploadStatus("Processing analysis results...");
+      await onImport(customPath.trim());
+      onClose();
+    } catch (err: any) {
+      setError(err.message || "Failed to import results file.");
+    } finally {
+      setUploading(false);
+      setUploadStatus("");
     }
   };
 
@@ -189,9 +214,9 @@ export const ImportResultsModal: React.FC<ImportResultsModalProps> = ({
 
           {/* Error Banner */}
           {error && (
-            <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-              <span>{error}</span>
+            <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
+              <div className="flex-1 font-mono text-[11px] leading-relaxed break-words">{error}</div>
             </div>
           )}
         </div>
