@@ -97,8 +97,11 @@ export const VigilanceWarehouseModal: React.FC<Props> = ({ isOpen, onClose, onDa
     try {
       const st = await api<any>("/api/warehouse/status");
       setStatus(st);
+      if (st.message && !st.ready) {
+        setError(st.message);
+      }
     } catch (e: any) {
-      setError(e.message);
+      setError(e.message || "Failed to reach warehouse service.");
     }
   }, []);
 
@@ -108,7 +111,7 @@ export const VigilanceWarehouseModal: React.FC<Props> = ({ isOpen, onClose, onDa
       const cat = await api<Catalog>(`/api/warehouse/catalog?source=${src}`);
       setCatalog(cat);
     } catch (e: any) {
-      setError(e.message);
+      setError(e.message || "Failed to load warehouse catalog.");
     } finally {
       setCatalogLoading(false);
     }
@@ -118,9 +121,16 @@ export const VigilanceWarehouseModal: React.FC<Props> = ({ isOpen, onClose, onDa
     if (!isOpen) return;
     refreshStatus();
     loadCatalog(source);
-    const t = setInterval(refreshStatus, 3000);
-    return () => clearInterval(t);
   }, [isOpen, refreshStatus, loadCatalog, source]);
+
+  // Poll status while an export job is running or waiting for initial connection
+  useEffect(() => {
+    if (!isOpen) return;
+    if (job?.status === "running" || !ready) {
+      const t = setInterval(refreshStatus, 2500);
+      return () => clearInterval(t);
+    }
+  }, [isOpen, job?.status, ready, refreshStatus]);
 
   // Reset selections when changing source
   const handleSourceChange = (newSrc: SourceType) => {
@@ -289,10 +299,23 @@ export const VigilanceWarehouseModal: React.FC<Props> = ({ isOpen, onClose, onDa
           {/* Status badge */}
           <div className="flex items-center gap-3 text-xs font-mono">
             <div className="flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full ${ready ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`} />
-              <span className={ready ? "text-emerald-400 font-semibold" : "text-amber-400"}>
-                {ready ? "DuckDB Core Connected" : "Connecting..."}
+              <span className={`w-2 h-2 rounded-full ${ready ? "bg-emerald-500 animate-pulse" : error ? "bg-red-500" : "bg-amber-500"}`} />
+              <span className={ready ? "text-emerald-400 font-semibold" : error ? "text-red-400 font-medium" : "text-amber-400"}>
+                {ready ? "Warehouse Connected" : error ? "Connection Failed" : status?.message || "Connecting..."}
               </span>
+              {!ready && (
+                <button
+                  onClick={() => {
+                    setError(null);
+                    refreshStatus();
+                    loadCatalog(source);
+                  }}
+                  className="ml-2 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300 transition"
+                  title="Retry connection to warehouse databases"
+                >
+                  Retry
+                </button>
+              )}
             </div>
             {status?.total_cases > 0 && (
               <span className="text-slate-400 border-l border-slate-800 pl-3">
